@@ -1,0 +1,138 @@
+```
+╔══════════════════════════════════════════════════════════════════════════════╗
+║                                                                              ║
+║              🎵 BOT DE MÚSICA PARA DISCORD COM YOUTUBE 🎵                   ║
+║                                                                              ║
+║              Bot profissional com Design Patterns e autenticação YouTube     ║
+║                                                                              ║
+╚══════════════════════════════════════════════════════════════════════════════╝
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+
+    ⚡ INÍCIO RÁPIDO
+
+
+    1️⃣  Leia:  INICIO_RAPIDO.md
+    2️⃣  Configure: .env (copie de .env.example)
+    3️⃣  Execute: python main.py
+    4️⃣  Teste: !play lofi
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+
+    ⚠️  TEM CLIENT ID E CLIENT SECRET DO DISCORD?
+
+
+    ❌ Eles NÃO funcionam para bots!
+    ✅ Você precisa do BOT TOKEN
+
+    👉 Leia: GUIA_CREDENCIAIS.md
+    👉 Veja: ONDE_ENCONTRAR.md
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+
+    📚 DOCUMENTAÇÃO
+
+
+    🗺️  INDICE.md              ← Navegue por tudo
+    ⚡  INICIO_RAPIDO.md        ← Configure em 5 minutos
+    🔑  GUIA_CREDENCIAIS.md    ← Entenda as diferenças
+    📸  ONDE_ENCONTRAR.md      ← Guia visual detalhado
+    �  OWNER_ID.md            ← Como obter seu ID
+    �📋  CREDENCIAIS_VISUAL.txt ← Resumo rápido
+    ❓  FAQ.md                 ← Problemas comuns
+    📖  README.md              ← Documentação completa
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+
+    ✨ CARACTERÍSTICAS
+
+
+    ✅ Reprodução de músicas do YouTube
+    ✅ Sistema de fila completo
+    ✅ Controle de volume
+    ✅ Embaralhamento
+    ✅ Busca integrada
+    ✅ Design Patterns (Singleton, Factory, Strategy, Observer)
+    ✅ Arquitetura modular e profissional
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+
+    🎮 COMANDOS
+
+
+    !play <música>   → Tocar música
+    !pause           → Pausar/retomar
+    !skip            → Pular música
+    !queue           → Ver fila
+    !volume <0-100>  → Ajustar volume
+    !search <termo>  → Buscar no YouTube
+    !help            → Ver todos os comandos
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+
+    🔧 PRÉ-REQUISITOS
+
+
+    ✅ Python 3.10+
+    ✅ FFmpeg instalado
+    ✅ Bot Token do Discord
+    ✅ Credenciais do YouTube (API Key ou OAuth2)
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+
+    📁 ESTRUTURA DO PROJETO
+
+
+    bot-youtube-disc/
+    ├── config.py              ⚙️  Configurações (Singleton)
+    ├── main.py                🚀 Ponto de entrada
+    ├── requirements.txt       📦 Dependências
+    ├── core/                  🎯 Núcleo do bot
+    │   ├── bot_client.py      (Singleton Pattern)
+    │   └── logger.py          (Factory Pattern)
+    ├── services/              🔧 Serviços
+    │   ├── youtube_service.py (Strategy + Singleton)
+    │   └── music_service.py   (Observer + Singleton)
+    └── handlers/              🎮 Comandos
+        └── music_commands.py  (Command Pattern)
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+
+    💡 DICA
+
+
+    90% dos problemas são:
+    1. Bot Token errado (leia GUIA_CREDENCIAIS.md)
+    2. Message Content Intent desativado (leia FAQ.md)
+    3. FFmpeg não instalado (leia INICIO_RAPIDO.md)
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+
+    🚀 COMECE AGORA
+
+
+    1. Abra: INICIO_RAPIDO.md
+    2. Siga o passo a passo
+    3. Em 5 minutos está funcionando!
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+```
