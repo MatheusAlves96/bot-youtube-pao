@@ -234,7 +234,7 @@ class MusicPlayer:
             return
 
         original_volume = self.volume
-        steps = 50  # 🆕 AUMENTADO (2.5x mais steps)
+        steps = config.CROSSFADE_STEPS  # 🆕 Configurável via .env (default: 50)
         step_duration = duration / steps
 
         try:
@@ -290,7 +290,7 @@ class MusicPlayer:
             return
 
         target_volume = self.volume
-        steps = 50  # 🆕 AUMENTADO (2.5x mais steps)
+        steps = config.CROSSFADE_STEPS  # 🆕 Configurável via .env (default: 50)
         step_duration = duration / steps
 
         # Começar do silêncio

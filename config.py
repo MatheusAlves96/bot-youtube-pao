@@ -77,6 +77,9 @@ class Config:
         self.CROSSFADE_DURATION = int(
             os.getenv("CROSSFADE_DURATION", "10")
         )  # Duração do fade em segundos
+        self.CROSSFADE_STEPS = int(
+            os.getenv("CROSSFADE_STEPS", "50")
+        )  # Número de steps no fade (quanto maior, mais suave)
 
         # Audio Quality Settings
         self.AUDIO_FORMAT = os.getenv("AUDIO_FORMAT", "bestaudio/best")
