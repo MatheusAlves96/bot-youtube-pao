@@ -240,11 +240,11 @@ grep "Muito curto" logs/autoplay.log
 
 ## Benefícios do Sistema de Logs
 
-✅ **Debugging Facilitado**: Identifique rapidamente onde o autoplay falha  
-✅ **Otimização**: Analise performance de cada etapa  
-✅ **Auditoria**: Histórico completo das decisões da IA  
-✅ **Troubleshooting**: Resolva problemas sem adivinhar  
-✅ **Métricas**: Taxas de aprovação, tempo de resposta, uso de quota  
+✅ **Debugging Facilitado**: Identifique rapidamente onde o autoplay falha
+✅ **Otimização**: Analise performance de cada etapa
+✅ **Auditoria**: Histórico completo das decisões da IA
+✅ **Troubleshooting**: Resolva problemas sem adivinhar
+✅ **Métricas**: Taxas de aprovação, tempo de resposta, uso de quota
 
 ## Exemplo de Análise de Problema
 
@@ -258,8 +258,8 @@ grep "Muito curto" logs/autoplay.log
 ⏭️ [REJEITADO] Dream Theater - Octavarium | 24min | Muito longo (24min > 10min)
 ```
 
-**Diagnóstico**: Limite de 10min muito restritivo para metal progressivo  
-**Solução**: Aumentar `AUTOPLAY_MAX_DURATION` para 15-20 minutos  
+**Diagnóstico**: Limite de 10min muito restritivo para metal progressivo
+**Solução**: Aumentar `AUTOPLAY_MAX_DURATION` para 15-20 minutos
 **Tempo de resolução**: < 2 minutos ⚡
 
 ---

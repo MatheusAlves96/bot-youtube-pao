@@ -1409,10 +1409,10 @@ class MusicService:
             if player.is_fetching_autoplay:  # Double-check após adquirir lock
                 return
             player.is_fetching_autoplay = True
-        
+
         # ⏱️ Iniciar cronômetro da sessão
         session_start_time = time.time()
-        
+
         self.logger.debug(
             f"🔍 Autoplay iniciado - Modo: {'proativo' if proactive else 'reativo'}, Fila atual: {len(player.queue)}"
         )
@@ -1440,7 +1440,7 @@ class MusicService:
                 'channel': video_channel,
                 'id': video_id
             })
-            
+
             self.logger.info(
                 f"🎯 Autoplay usando como base: '{video_title}' de {video_channel}"
             )
@@ -1474,7 +1474,7 @@ class MusicService:
                 self.logger.warning(
                     f"⚠️ Autoplay: Nenhum vídeo encontrado (falha {player.autoplay_failures})"
                 )
-                
+
                 # 📊 LOG: Falha na tentativa
                 autoplay_logger.log_failure(
                     attempt=player.autoplay_failures,
@@ -1611,7 +1611,7 @@ class MusicService:
                     self.logger.debug(
                         f"✅ Música adicionada à fila: {song.title} | Total na fila: {len(player.queue)}"
                     )
-                    
+
                     # 📊 LOG AUTOPLAY: Vídeo adicionado à fila
                     autoplay_logger.log_queue_added(
                         video_title=song.title,
@@ -1652,7 +1652,7 @@ class MusicService:
                     self.logger.debug(
                         f"🎵 Autoplay proativo concluído - {len(player.queue)} músicas na fila (sem auto-start)"
                     )
-            
+
             # 📊 LOG: Sessão bem-sucedida
             session_time = time.time() - session_start_time
             autoplay_logger.log_session_end(
@@ -1664,7 +1664,7 @@ class MusicService:
         except Exception as e:
             self.logger.error(f"❌ Erro no autoplay: {e}")
             autoplay_logger.log_error("Erro crítico no autoplay", e)
-            
+
             # 📊 LOG: Sessão com falha
             session_time = time.time() - session_start_time
             autoplay_logger.log_session_end(

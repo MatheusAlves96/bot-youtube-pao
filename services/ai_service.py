@@ -553,15 +553,15 @@ IMPORTANTE:
                             self.logger.info(
                                 f"{status} IA validação [{i+1}]: \"{video['title'][:50]}...\" - {reason}"
                             )
-                            
+
                             # 📊 LOG AUTOPLAY: Resultado da validação IA por vídeo
                             autoplay_logger.log_ai_validation_result(
-                                video_title=video['title'],
+                                video_title=video["title"],
                                 approved=approved,
                                 reason=reason,
-                                confidence=confidence
+                                confidence=confidence,
                             )
-                            
+
                             if approved:
                                 approved_count += 1
                             else:
@@ -576,12 +576,10 @@ IMPORTANTE:
                                 }
                             )
                             approved_count += 1
-                    
+
                     # 📊 LOG AUTOPLAY: Resumo da validação IA
                     autoplay_logger.log_ai_summary(
-                        approved=approved_count,
-                        rejected=rejected_count,
-                        quota_used=1
+                        approved=approved_count, rejected=rejected_count, quota_used=1
                     )
 
                     return validated_videos
