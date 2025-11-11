@@ -25,6 +25,7 @@ class MusicCommands(commands.Cog):
         self.music_service = MusicService.get_instance()
         self.youtube_service = YouTubeService.get_instance()
         self.logger = LoggerFactory.create_logger(__name__)
+        self._channel_cache = {}  # Cache de canais de voz por guild_id
 
     async def cog_load(self):
         """Inicializa serviços ao carregar o cog"""
@@ -114,6 +115,30 @@ class MusicCommands(commands.Cog):
             self.logger.error(f"Erro ao verificar canal de música: {e}")
 
         return False
+
+    def _get_cached_voice_channel(self, ctx: commands.Context):
+        """
+        Obtém canal de voz do usuário com cache
+        
+        Returns:
+            Canal de voz ou None
+        """
+        guild_id = ctx.guild.id
+        
+        # Verificar cache primeiro
+        if guild_id in self._channel_cache:
+            channel = self._channel_cache[guild_id]
+            # Validar se o canal ainda é válido
+            if channel and channel.guild == ctx.guild:
+                return channel
+        
+        # Se não está em cache ou inválido, buscar
+        if ctx.author.voice:
+            channel = ctx.author.voice.channel
+            self._channel_cache[guild_id] = channel
+            return channel
+        
+        return None
 
     def _check_voice_state(self, ctx: commands.Context) -> Optional[str]:
         """Verifica se o usuário está em um canal de voz"""
@@ -225,7 +250,9 @@ class MusicCommands(commands.Cog):
                         self.logger.debug(f"Erro ao atualizar progresso: {e}")
                         pass  # Ignorar erros de edição (rate limit, etc)
                     except Exception as e:
-                        self.logger.error(f"Erro inesperado ao atualizar progresso: {e}")
+                        self.logger.error(
+                            f"Erro inesperado ao atualizar progresso: {e}"
+                        )
 
                 result = await self.music_service.extract_playlist(
                     query, ctx.author, player, update_progress
