@@ -622,27 +622,27 @@ class MusicService:
             # OTIMIZAÇÃO #1: Processar em batches paralelos (5 vídeos por vez)
             BATCH_SIZE = 5
             total_processed = 0
-            
+
             for batch_start in range(0, len(entries), BATCH_SIZE):
                 batch_end = min(batch_start + BATCH_SIZE, len(entries))
                 batch = entries[batch_start:batch_end]
-                
+
                 # Verificar cancelamento antes de cada batch
                 if player and player.cancel_playlist_processing:
                     self.logger.info(
                         f"🛑 Processamento cancelado após {total_processed}/{len(entries)} itens"
                     )
                     break
-                
+
                 # Processar batch em paralelo
                 batch_tasks = []
                 for idx_in_batch, entry in enumerate(batch):
                     idx = batch_start + idx_in_batch + 1
-                    
+
                     async def process_entry(entry=entry, idx=idx):
                         if entry is None:
                             return {"error": f"Item {idx}: Vídeo indisponível"}
-                        
+
                         try:
                             # Pegar URL do vídeo
                             video_url = entry.get("url") or entry.get("webpage_url")
@@ -652,18 +652,18 @@ class MusicService:
                                     video_url = f"https://www.youtube.com/watch?v={video_id}"
                                 else:
                                     return {"error": f"Item {idx}: URL não encontrada"}
-                            
+
                             # Extrair detalhes (em paralelo)
                             video_data = await loop.run_in_executor(
                                 None,
                                 lambda: ytdl_detail.extract_info(video_url, download=False),
                             )
-                            
+
                             if not video_data:
                                 return {"error": f"Item {idx}: Não foi possível extrair"}
-                            
+
                             title = video_data.get("title", entry.get("title", "Unknown"))
-                            
+
                             return {
                                 "idx": idx,
                                 "song_data": {
@@ -684,29 +684,29 @@ class MusicService:
                                 return {"error": f"Item {idx}: Vídeo indisponível"}
                             else:
                                 return {"error": f"Item {idx}: {error_msg[:50]}"}
-                    
+
                     batch_tasks.append(process_entry())
-                
+
                 # Aguardar batch completo
                 batch_results = await asyncio.gather(*batch_tasks, return_exceptions=True)
-                
+
                 # Processar resultados do batch
                 for result in batch_results:
                     if isinstance(result, Exception):
                         errors.append(f"Erro: {str(result)[:50]}")
                         continue
-                    
+
                     if "error" in result:
                         errors.append(result["error"])
                         self.logger.warning(f"❌ {result['error']}")
                         continue
-                    
+
                     # Sucesso - criar música
                     song = Song(result["song_data"], requester)
                     songs.append(song)
                     total_processed += 1
                     self.logger.info(f"✅ {result['idx']}/{len(entries)}: {result['title']}")
-                    
+
                     # Callback para adicionar em tempo real
                     if progress_callback:
                         await progress_callback(
@@ -717,7 +717,7 @@ class MusicService:
                             current_title=result['title'],
                             song=song,
                         )
-            
+
 
 
             # Calcular itens não processados

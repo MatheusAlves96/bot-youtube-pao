@@ -142,10 +142,11 @@ class MusicCommands(commands.Cog):
 
     def _check_voice_state(self, ctx: commands.Context) -> Optional[str]:
         """Verifica se o usuário está em um canal de voz"""
-        if not ctx.author.voice:
+        voice_channel = self._get_cached_voice_channel(ctx)
+        if not voice_channel:
             return "❌ Você precisa estar em um canal de voz!"
 
-        if ctx.voice_client and ctx.voice_client.channel != ctx.author.voice.channel:
+        if ctx.voice_client and ctx.voice_client.channel != voice_channel:
             return "❌ Você precisa estar no mesmo canal de voz que eu!"
 
         return None
@@ -173,8 +174,13 @@ class MusicCommands(commands.Cog):
         # Conectar ao canal de voz se necessário
         if not ctx.voice_client:
             try:
-                await ctx.author.voice.channel.connect()
-                self.logger.info(f"Conectado ao canal: {ctx.author.voice.channel.name}")
+                voice_channel = self._get_cached_voice_channel(ctx)
+                if not voice_channel:
+                    await ctx.send("❌ Você precisa estar em um canal de voz!")
+                    return
+                
+                await voice_channel.connect()
+                self.logger.info(f"Conectado ao canal: {voice_channel.name}")
             except Exception as e:
                 await ctx.send(f"❌ Erro ao conectar ao canal de voz: {e}")
                 return
@@ -1035,6 +1041,105 @@ class MusicCommands(commands.Cog):
 
         await ctx.send(embed=embed)
 
+    @commands.command(name="cachestats", aliases=["cache", "estatisticas"])
+    async def cache_stats(self, ctx: commands.Context):
+        """
+        Mostra estatísticas do cache LRU de vídeos
+
+        O cache armazena informações de vídeos já processados para
+        evitar reprocessamento e reduzir chamadas ao yt-dlp.
+
+        Uso: !cachestats
+        """
+        stats = self.music_service.get_cache_stats()
+
+        # Emoji baseado no hit rate
+        hit_rate = stats["hit_rate"]
+        if hit_rate >= 70:
+            emoji = "🟢"
+            status = "Excelente"
+        elif hit_rate >= 50:
+            emoji = "🟡"
+            status = "Bom"
+        elif hit_rate >= 30:
+            emoji = "🟠"
+            status = "Regular"
+        else:
+            emoji = "🔴"
+            status = "Baixo"
+
+        embed = discord.Embed(
+            title=f"{emoji} Estatísticas do Cache LRU",
+            description="Cache de informações de vídeos processados",
+            color=(
+                discord.Color.green()
+                if hit_rate >= 70
+                else (
+                    discord.Color.orange()
+                    if hit_rate >= 50
+                    else discord.Color.red()
+                )
+            ),
+        )
+
+        # 📊 Estatísticas Gerais
+        embed.add_field(
+            name="📊 Estatísticas",
+            value=(
+                f"```\n"
+                f"Tamanho:    {stats['size']}/{stats['max_size']} vídeos\n"
+                f"Ocupação:   {stats['size']/stats['max_size']*100:.1f}%\n"
+                f"Total Reqs: {stats['total_requests']:,}\n"
+                f"```"
+            ),
+            inline=False,
+        )
+
+        # 🎯 Hit Rate
+        hits_bar = self._create_progress_bar(hit_rate, length=15)
+        embed.add_field(
+            name=f"🎯 Hit Rate - {status}",
+            value=(
+                f"```\n"
+                f"Hits:   {stats['hits']:,} ({hit_rate:.1f}%)\n"
+                f"Misses: {stats['misses']:,}\n"
+                f"{hits_bar}\n"
+                f"```"
+            ),
+            inline=False,
+        )
+
+        # ℹ️ Informações
+        embed.add_field(
+            name="ℹ️ Como Funciona",
+            value=(
+                "• **Hit:** Vídeo encontrado em cache (rápido)\n"
+                "• **Miss:** Vídeo precisa ser extraído (lento)\n"
+                "• **LRU:** Remove vídeos menos usados quando cheio\n"
+                "• **Meta:** Hit rate >60% é considerado bom"
+            ),
+            inline=False,
+        )
+
+        # 💡 Dicas
+        if hit_rate < 50:
+            embed.add_field(
+                name="💡 Dica",
+                value=(
+                    "Hit rate baixo pode indicar:\n"
+                    "• Músicas muito variadas (normal)\n"
+                    "• Cache muito pequeno (aumentar MAX_SIZE)\n"
+                    "• Bot reiniciado recentemente (cache limpo)"
+                ),
+                inline=False,
+            )
+
+        embed.set_footer(
+            text="💾 Cache é limpo ao reiniciar o bot | LRU = Least Recently Used"
+        )
+
+        await ctx.send(embed=embed)
+
     def _create_progress_bar(self, percent: float, length: int = 20) -> str:
         """Cria uma barra de progresso visual"""
         filled = int((percent / 100) * length)
@@ -1068,6 +1173,7 @@ class MusicCommands(commands.Cog):
                 f"`{config.COMMAND_PREFIX}nowplaying` - Música atual",
                 f"`{config.COMMAND_PREFIX}search <termo>` - Busca no YouTube",
                 f"`{config.COMMAND_PREFIX}quota` - Mostra uso das APIs (YouTube + Groq)",
+                f"`{config.COMMAND_PREFIX}cachestats` - Mostra estatísticas do cache LRU",
             ],
             "⚙️ Configurações": [
                 f"`{config.COMMAND_PREFIX}volume <0-100>` - Ajusta o volume",

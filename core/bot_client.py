@@ -148,6 +148,10 @@ class MusicBot:
         self.logger.info("Iniciando encerramento gracioso...")
 
         try:
+            # 0️⃣ Salvar quota antes de encerrar
+            from utils.quota_tracker import quota_tracker
+            quota_tracker.force_save()
+
             # 1️⃣ Desconectar voice clients
             if hasattr(self.bot, "voice_clients") and self.bot.voice_clients:
                 self.logger.debug(

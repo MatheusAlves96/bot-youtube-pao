@@ -66,6 +66,12 @@ class QuotaTracker:
 
         self.current_minute = datetime.now().replace(second=0, microsecond=0)
 
+        # 🆕 OTIMIZAÇÃO #6: Batch save (salvar a cada N operações)
+        self._save_counter = 0
+        self._save_interval = 10  # Salvar a cada 10 operações
+        self._last_save_time = datetime.now()
+        self._dirty = False  # Flag indicando mudanças não salvas
+
         self._load_usage()
 
     def _load_usage(self):
@@ -187,8 +193,28 @@ class QuotaTracker:
             }
             self.operations_history.append(operation_data)
 
-        # Salva no arquivo
-        self._save_usage()
+        # 🆕 OTIMIZAÇÃO #6: Batch save ao invés de salvar toda operação
+        self._dirty = True
+        self._save_counter += 1
+
+        # Decidir se deve salvar agora
+        time_since_save = (datetime.now() - self._last_save_time).total_seconds()
+
+        should_save = (
+            self._save_counter >= self._save_interval or  # A cada N ops
+            time_since_save > 300 or  # Ou a cada 5 minutos (segurança)
+            self._is_critical_threshold()  # Ou se chegou perto do limite
+        )
+
+        if should_save and self._dirty:
+            self._save_usage()
+            self._save_counter = 0
+            self._last_save_time = datetime.now()
+            self._dirty = False
+            logger.debug(
+                f"💾 Quota salva (counter: {self._save_counter}, "
+                f"time: {time_since_save:.0f}s)"
+            )
 
         # Log com estatísticas
         self._log_usage(operation, cost, details, is_groq)
@@ -384,6 +410,35 @@ class QuotaTracker:
         lines.append(f"└─ Total: {stats['groq_total_operations']} requisições")
 
         return "\n".join(lines)
+
+    def _is_critical_threshold(self) -> bool:
+        """
+        Verifica se está perto de limites críticos (salvar imediatamente)
+
+        Returns:
+            True se deve salvar agora (perto de limites)
+        """
+        youtube_critical = (self.daily_usage / self.DAILY_LIMIT) > 0.9  # 90%
+        groq_critical = (self.groq_daily_usage / self.GROQ_DAILY_LIMIT) > 0.9
+        return youtube_critical or groq_critical
+
+    def force_save(self):
+        """
+        Força salvamento imediato (chamar no shutdown do bot)
+
+        Use caso:
+            - Shutdown do bot
+            - Antes de operações críticas
+            - Testes
+        """
+        if self._dirty:
+            self._save_usage()
+            self._dirty = False
+            self._save_counter = 0
+            self._last_save_time = datetime.now()
+            logger.info("💾 Quota salva (forçado)")
+        else:
+            logger.debug("💾 Quota já está salva")
 
     def can_make_request(self, operation: str = "search") -> bool:
         """

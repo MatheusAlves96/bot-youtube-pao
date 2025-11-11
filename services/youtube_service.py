@@ -362,61 +362,63 @@ class YouTubeService:
     async def get_videos_duration_batch(self, video_ids: List[str]) -> Dict[str, int]:
         """
         Busca duração de múltiplos vídeos em UMA chamada (BATCH)
-        
+
         Args:
             video_ids: Lista de IDs (máximo 50 por batch)
-            
+
         Returns:
             Dict mapping video_id -> duration_minutes
         """
         if not video_ids:
             return {}
-        
+
         if not self.youtube:
             await self.initialize()
-        
+
         durations = {}
-        
+
         # Processar em lotes de 50 (limite da API do YouTube)
         BATCH_SIZE = 50
         for i in range(0, len(video_ids), BATCH_SIZE):
-            batch = video_ids[i:i+BATCH_SIZE]
+            batch = video_ids[i : i + BATCH_SIZE]
             ids_str = ",".join(batch)
-            
+
             try:
                 # UMA chamada para múltiplos vídeos! (98% menos quota)
-                quota_tracker.track_operation("videos_list_batch", f"{len(batch)} videos")
-                
+                quota_tracker.track_operation(
+                    "videos_list_batch", f"{len(batch)} videos"
+                )
+
                 request = self.youtube.videos().list(
                     part="contentDetails",
-                    id=ids_str  # Múltiplos IDs separados por vírgula
+                    id=ids_str,  # Múltiplos IDs separados por vírgula
                 )
-                
+
                 loop = asyncio.get_event_loop()
                 response = await loop.run_in_executor(None, request.execute)
-                
+
                 for item in response.get("items", []):
                     vid_id = item["id"]
                     duration_str = item["contentDetails"]["duration"]
-                    
+
                     # Parsear duração ISO 8601
                     hours = 0
                     minutes = 0
-                    
+
                     hours_match = DURATION_HOURS_PATTERN.search(duration_str)
                     minutes_match = DURATION_MINUTES_PATTERN.search(duration_str)
-                    
+
                     if hours_match:
                         hours = int(hours_match.group(1))
                     if minutes_match:
                         minutes = int(minutes_match.group(1))
-                    
+
                     total_minutes = hours * 60 + minutes
                     durations[vid_id] = total_minutes
-                    
+
             except Exception as e:
                 self.logger.debug(f"Erro ao buscar batch de durações: {e}")
-        
+
         return durations
 
     async def get_related_videos(
@@ -688,6 +690,9 @@ class YouTubeService:
                 "cast",
             ]
 
+            # 🆕 OTIMIZAÇÃO #1: Coletar candidatos para processamento em batch
+            video_candidates = []
+
             for item in response.get("items", []):
                 vid_id = item["id"]["videoId"]
                 title = item["snippet"]["title"]
@@ -830,58 +835,64 @@ class YouTubeService:
                 # if same_artist and len(videos) >= 1:
                 #     ...continue
 
-                # Filtro 5: Verificar duração do vídeo (evitar playlists/compilações longas)
-                # Buscar detalhes do vídeo para obter duração
-                try:
-                    video_details_request = self.youtube.videos().list(
-                        part="contentDetails", id=vid_id
+                # LOG: Vídeo passou nos filtros iniciais
+                self.logger.debug(f"   ✅ Passou nos filtros iniciais (aguardando filtro de duração)")
+
+                # Armazenar candidato para filtro de duração em batch
+                video_candidates.append({
+                    "id": vid_id,
+                    "item": item
+                })
+
+            # 🆕 OTIMIZAÇÃO #1: PROCESSAR DURAÇÕES EM BATCH (UMA CHAMADA API!)
+            self.logger.info(
+                f"📦 Processando {len(video_candidates)} candidatos em batch"
+            )
+
+            # Extrair apenas os IDs
+            candidate_ids = [c["id"] for c in video_candidates]
+
+            # Buscar durações em batch (98% menos quota!)
+            import time
+            start_time = time.time()
+            durations = await self.get_videos_duration_batch(candidate_ids)
+            elapsed = time.time() - start_time
+
+            self.logger.info(
+                f"⚡ Batch API: {len(candidate_ids)} vídeos em {elapsed:.2f}s "
+                f"({len(candidate_ids)/elapsed:.1f} vídeos/s) - Economia: {len(candidate_ids)-1} chamadas API!"
+            )
+
+            # Filtrar por duração e criar lista final
+            videos = []
+            for candidate in video_candidates:
+                vid_id = candidate["id"]
+                item = candidate["item"]
+                duration_minutes = durations.get(vid_id, 0)
+
+                # LOG: Duração do vídeo
+                self.logger.debug(
+                    f"🔍 {item['snippet']['title'][:50]} - ⏱️ {duration_minutes} min"
+                )
+
+                # Filtrar vídeos muito longos (mais de 10 minutos = provavelmente playlist/mix)
+                if duration_minutes > 10:
+                    self.logger.debug(
+                        f"   ⏭️ Excluído (muito longo - {duration_minutes} min, provavelmente playlist)"
                     )
-                    video_details = video_details_request.execute()
+                    continue
 
-                    if video_details.get("items"):
-                        duration_str = video_details["items"][0]["contentDetails"][
-                            "duration"
-                        ]
-                        # Duração vem no formato ISO 8601: PT4M13S (4 min 13s), PT1H2M10S (1h 2min 10s)
-
-                        # Extrair minutos e horas (usando regex pré-compilados)
-                        hours = 0
-                        minutes = 0
-
-                        hours_match = DURATION_HOURS_PATTERN.search(duration_str)
-                        minutes_match = DURATION_MINUTES_PATTERN.search(duration_str)
-
-                        if hours_match:
-                            hours = int(hours_match.group(1))
-                        if minutes_match:
-                            minutes = int(minutes_match.group(1))
-
-                        total_minutes = hours * 60 + minutes
-
-                        # LOG: Duração do vídeo
-                        self.logger.debug(f"   ⏱️ Duração: {total_minutes} minutos")
-
-                        # Filtrar vídeos muito longos (mais de 10 minutos = provavelmente playlist/mix)
-                        if total_minutes > 10:
-                            self.logger.debug(
-                                f"   ⏭️ Excluído (muito longo - {total_minutes} min, provavelmente playlist)"
-                            )
-                            continue
-
-                        # Filtrar vídeos muito curtos (menos de 1 minuto = shorts/tiktok)
-                        if total_minutes < 1:
-                            self.logger.debug(
-                                f"   ⏭️ Excluído (muito curto - {total_minutes} min, provavelmente short)"
-                            )
-                            continue
-
-                except Exception as e:
-                    # Se falhar ao buscar duração, não filtrar (dar benefício da dúvida)
-                    self.logger.debug(f"   ⚠️ Não foi possível obter duração: {e}")
+                # Filtrar vídeos muito curtos (menos de 1 minuto = shorts/tiktok)
+                if duration_minutes < 1:
+                    self.logger.debug(
+                        f"   ⏭️ Excluído (muito curto - {duration_minutes} min, provavelmente short)"
+                    )
+                    continue
 
                 # LOG: Vídeo aprovado!
-                self.logger.debug(f"   ✅ APROVADO! Adicionando à lista")
+                self.logger.debug(f"   ✅ APROVADO após filtro de duração!")
 
+                # Adicionar à lista final
                 video = {
                     "id": vid_id,
                     "title": item["snippet"]["title"],
@@ -897,7 +908,8 @@ class YouTubeService:
                     break
 
             self.logger.info(
-                f"✅ Encontrados {len(videos)} vídeos relacionados (de {total_results} analisados)"
+                f"✅ Filtrados {len(videos)} vídeos de {len(video_candidates)} candidatos "
+                f"({len(video_candidates) - len(videos)} rejeitados por duração)"
             )
 
             # 🤖 VALIDAÇÃO FINAL COM IA

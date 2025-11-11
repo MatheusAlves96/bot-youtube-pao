@@ -32,7 +32,7 @@ class AIService:
         self.api_key = config.GROQ_API_KEY
         self.api_url = "https://api.groq.com/openai/v1/chat/completions"
         self.model = "llama-3.1-8b-instant"  # Modelo rápido e gratuito
-        
+
         # Cache de respostas (24h TTL)
         self._response_cache: Dict[str, tuple[Dict[str, Any], float]] = {}
         self._cache_ttl = 86400  # 24 horas em segundos
@@ -70,18 +70,21 @@ class AIService:
             )
 
         history = history or []
-        
+
         # Gerar chave de cache (title + channel + history_hash + strategy)
         import hashlib
         import time
+
         history_hash = hashlib.md5("".join(history[-5:]).encode()).hexdigest()[:8]
         cache_key = f"{current_title}:{current_channel}:{history_hash}:{strategy}"
-        
+
         # Verificar cache
         if cache_key in self._response_cache:
             cached_response, cached_time = self._response_cache[cache_key]
             if time.time() - cached_time < self._cache_ttl:
-                self.logger.debug(f"✅ Cache HIT para autoplay query (age: {int(time.time() - cached_time)}s)")
+                self.logger.debug(
+                    f"✅ Cache HIT para autoplay query (age: {int(time.time() - cached_time)}s)"
+                )
                 return cached_response
             else:
                 # Cache expirado, remover
@@ -145,9 +148,10 @@ class AIService:
                     self.logger.debug(
                         f"   Internacional: {analysis.get('internacional', False)} | {analysis.get('explicacao', '')}"
                     )
-                    
+
                     # Salvar no cache
                     import time
+
                     self._response_cache[cache_key] = (analysis, time.time())
                     self.logger.debug(f"💾 Resposta salva no cache (TTL: 24h)")
 
