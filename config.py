@@ -69,6 +69,12 @@ class Config:
         self.AUTOPLAY_HISTORY_SIZE = int(
             os.getenv("AUTOPLAY_HISTORY_SIZE", "100")
         )  # Evitar repetir últimas X músicas da sessão
+        self.AUTOPLAY_MIN_DURATION = int(
+            os.getenv("AUTOPLAY_MIN_DURATION", "1")
+        )  # Duração mínima em minutos (evita shorts)
+        self.AUTOPLAY_MAX_DURATION = int(
+            os.getenv("AUTOPLAY_MAX_DURATION", "15")
+        )  # Duração máxima em minutos (evita playlists/lives)
 
         # Crossfade Configuration
         self.CROSSFADE_ENABLED = (

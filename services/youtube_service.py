@@ -883,17 +883,17 @@ class YouTubeService:
                     f"🔍 {item['snippet']['title'][:50]} - ⏱️ {duration_minutes} min"
                 )
 
-                # Filtrar vídeos muito longos (mais de 10 minutos = provavelmente playlist/mix)
-                if duration_minutes > 10:
+                # Filtrar vídeos muito longos (configurável via AUTOPLAY_MAX_DURATION)
+                if duration_minutes > config.AUTOPLAY_MAX_DURATION:
                     self.logger.debug(
-                        f"   ⏭️ Excluído (muito longo - {duration_minutes} min, provavelmente playlist)"
+                        f"   ⏭️ Excluído (muito longo - {duration_minutes} min > {config.AUTOPLAY_MAX_DURATION} min)"
                     )
                     continue
 
-                # Filtrar vídeos muito curtos (menos de 1 minuto = shorts/tiktok)
-                if duration_minutes < 1:
+                # Filtrar vídeos muito curtos (configurável via AUTOPLAY_MIN_DURATION)
+                if duration_minutes < config.AUTOPLAY_MIN_DURATION:
                     self.logger.debug(
-                        f"   ⏭️ Excluído (muito curto - {duration_minutes} min, provavelmente short)"
+                        f"   ⏭️ Excluído (muito curto - {duration_minutes} min < {config.AUTOPLAY_MIN_DURATION} min)"
                     )
                     continue
 
