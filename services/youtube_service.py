@@ -27,9 +27,7 @@ WORD_PATTERN = re.compile(r"\w+")
 VIDEO_ID_PATTERN = re.compile(
     r"(?:youtube\.com/watch\?v=|youtu\.be/)([a-zA-Z0-9_-]{11})"
 )
-PLAYLIST_ID_PATTERN = re.compile(
-    r"(?:youtube\.com/playlist\?list=)([a-zA-Z0-9_-]+)"
-)
+PLAYLIST_ID_PATTERN = re.compile(r"(?:youtube\.com/playlist\?list=)([a-zA-Z0-9_-]+)")
 DURATION_HOURS_PATTERN = re.compile(r"(\d+)H")
 DURATION_MINUTES_PATTERN = re.compile(r"(\d+)M")
 ISO8601_DURATION_PATTERN = re.compile(r"PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?")

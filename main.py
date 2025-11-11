@@ -50,6 +50,28 @@ class BotRunner:
         except Exception as e:
             self.logger.error(f"Erro na thread do bot: {e}", exc_info=True)
         finally:
+            # Cleanup completo do asyncio
+            try:
+                # 1. Cancelar tarefas pendentes
+                pending = [t for t in asyncio.all_tasks(self.loop) if not t.done()]
+                for task in pending:
+                    task.cancel()
+                
+                # 2. Aguardar cancelações (max 2s)
+                if pending:
+                    self.loop.run_until_complete(
+                        asyncio.wait(pending, timeout=2.0)
+                    )
+                
+                # 3. Shutdown de async generators
+                self.loop.run_until_complete(self.loop.shutdown_asyncgens())
+                
+            except Exception as e:
+                self.logger.debug(f"Erro ao limpar loop: {e}")
+            finally:
+                # 4. Fechar loop
+                self.loop.close()
+            
             self.logger.info("Thread do bot encerrada")
 
     def start(self):

@@ -1197,13 +1197,15 @@ class MusicService:
     def get_cache_stats(self) -> Dict[str, Any]:
         """
         Retorna estatísticas do cache LRU
-        
+
         Returns:
             Dicionário com estatísticas do cache
         """
         total_requests = self._cache_hits + self._cache_misses
-        hit_rate = (self._cache_hits / total_requests * 100) if total_requests > 0 else 0
-        
+        hit_rate = (
+            (self._cache_hits / total_requests * 100) if total_requests > 0 else 0
+        )
+
         return {
             "size": len(self._video_info_cache),
             "max_size": self._cache_max_size,

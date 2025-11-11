@@ -148,45 +148,27 @@ class MusicBot:
         self.logger.info("Iniciando encerramento gracioso...")
 
         try:
-            # 1️⃣ Desconectar voice clients PRIMEIRO (mais rápido)
+            # 1️⃣ Desconectar voice clients
             if hasattr(self.bot, "voice_clients") and self.bot.voice_clients:
                 self.logger.debug(
                     f"Desconectando de {len(self.bot.voice_clients)} canais de voz..."
                 )
-                disconnect_tasks = []
                 for voice_client in list(self.bot.voice_clients):
-                    if voice_client.is_connected():
-                        disconnect_tasks.append(voice_client.disconnect(force=True))
-                
-                if disconnect_tasks:
-                    await asyncio.gather(*disconnect_tasks, return_exceptions=True)
+                    try:
+                        if voice_client.is_connected():
+                            await asyncio.wait_for(
+                                voice_client.disconnect(force=True), timeout=1.0
+                            )
+                    except Exception:
+                        pass
 
-            # 2️⃣ Fechar bot
+            # 2️⃣ Fechar bot (isso fecha a sessão HTTP internamente)
             if not self.bot.is_closed():
-                self.logger.debug("Fechando conexão do bot...")
+                self.logger.debug("Fechando bot...")
                 try:
-                    await asyncio.wait_for(self.bot.close(), timeout=1.5)
-                except asyncio.TimeoutError:
-                    self.logger.debug("Timeout ao fechar bot, forçando...")
-                except (RuntimeError, asyncio.CancelledError):
-                    # Esperado durante shutdown
+                    await asyncio.wait_for(self.bot.close(), timeout=2.0)
+                except (asyncio.TimeoutError, RuntimeError, asyncio.CancelledError):
                     pass
-
-            # 3️⃣ Cancelar tarefas restantes DEPOIS (cleanup)
-            try:
-                loop = asyncio.get_event_loop()
-                tasks = [
-                    t
-                    for t in asyncio.all_tasks(loop)
-                    if not t.done() and t is not asyncio.current_task()
-                ]
-                if tasks:
-                    self.logger.debug(f"Limpando {len(tasks)} tarefas pendentes...")
-                    for task in tasks:
-                        task.cancel()
-                    # Não aguardar - deixar morrer
-            except Exception:
-                pass
 
             self.logger.info("✅ Bot encerrado")
 

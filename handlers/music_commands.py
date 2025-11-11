@@ -119,25 +119,25 @@ class MusicCommands(commands.Cog):
     def _get_cached_voice_channel(self, ctx: commands.Context):
         """
         Obtém canal de voz do usuário com cache
-        
+
         Returns:
             Canal de voz ou None
         """
         guild_id = ctx.guild.id
-        
+
         # Verificar cache primeiro
         if guild_id in self._channel_cache:
             channel = self._channel_cache[guild_id]
             # Validar se o canal ainda é válido
             if channel and channel.guild == ctx.guild:
                 return channel
-        
+
         # Se não está em cache ou inválido, buscar
         if ctx.author.voice:
             channel = ctx.author.voice.channel
             self._channel_cache[guild_id] = channel
             return channel
-        
+
         return None
 
     def _check_voice_state(self, ctx: commands.Context) -> Optional[str]:
