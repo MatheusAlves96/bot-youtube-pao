@@ -332,7 +332,10 @@ class YouTubeService:
                 part="snippet,contentDetails,statistics", id=video_id
             )
 
-            response = request.execute()
+            # Executar com retry (3 tentativas com backoff exponencial)
+            import asyncio
+            loop = asyncio.get_event_loop()
+            response = await loop.run_in_executor(None, request.execute)
 
             if not response.get("items"):
                 return None

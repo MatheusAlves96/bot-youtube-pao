@@ -6,12 +6,47 @@ Gerencia reprodução de música, fila e estado
 import asyncio
 import discord
 import yt_dlp
-from typing import Optional, List, Dict, Any
+import aiohttp
+from typing import Optional, List, Dict, Any, Callable
 from collections import deque, OrderedDict
 from datetime import datetime
 
 from core.logger import LoggerFactory
 from config import config
+
+
+# Decorator para retry com backoff exponencial
+async def retry_with_backoff(
+    func: Callable,
+    max_retries: int = 3,
+    base_delay: float = 1.0,
+    exceptions: tuple = (aiohttp.ClientError, asyncio.TimeoutError, ConnectionError)
+):
+    """
+    Executa função com retry exponencial em caso de falha de rede
+    
+    Args:
+        func: Função async a ser executada
+        max_retries: Número máximo de tentativas (padrão: 3)
+        base_delay: Delay inicial em segundos (padrão: 1s)
+        exceptions: Tupla de exceções que acionam retry
+    
+    Returns:
+        Resultado da função ou None em caso de falha total
+    """
+    for attempt in range(max_retries):
+        try:
+            return await func()
+        except exceptions as e:
+            if attempt == max_retries - 1:  # Última tentativa
+                raise
+            
+            delay = base_delay * (2 ** attempt)  # Exponencial: 1s, 2s, 4s
+            logger = LoggerFactory.create_logger(__name__)
+            logger.debug(f"⚠️ Tentativa {attempt + 1}/{max_retries} falhou: {type(e).__name__}. Retry em {delay}s...")
+            await asyncio.sleep(delay)
+    
+    return None
 
 
 class Song:
@@ -417,10 +452,19 @@ class MusicService:
             Objeto Song com as informações
         """
         try:
-            # Executar em thread separada para não bloquear
+            # Executar em thread separada com retry (3 tentativas, backoff 1s→2s→4s)
             loop = asyncio.get_event_loop()
-            data = await loop.run_in_executor(
-                None, lambda: self.ytdl.extract_info(url, download=False)
+            
+            async def extract_with_retry():
+                return await loop.run_in_executor(
+                    None, lambda: self.ytdl.extract_info(url, download=False)
+                )
+            
+            data = await retry_with_backoff(
+                extract_with_retry,
+                max_retries=3,
+                base_delay=1.0,
+                exceptions=(Exception,)  # yt-dlp lança Exception genérica para erros de rede
             )
 
             # Verificar se data não é None
