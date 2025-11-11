@@ -500,6 +500,10 @@ class MusicService:
             Dicionário com estatísticas e lista de músicas
         """
         try:
+            # Resetar flag de cancelamento (caso tenha ficado de operação anterior)
+            if player:
+                player.cancel_playlist_processing = False
+            
             # Calcular limite para não baixar páginas desnecessárias
             max_items = config.MAX_QUEUE_SIZE + 10
 
