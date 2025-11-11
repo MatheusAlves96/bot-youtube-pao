@@ -396,6 +396,10 @@ class YouTubeService:
 
                 loop = asyncio.get_event_loop()
                 response = await loop.run_in_executor(None, request.execute)
+                
+                # DEBUG: Verificar resposta da API
+                items = response.get("items", [])
+                self.logger.debug(f"🔍 API retornou {len(items)} items com duração para {len(batch)} IDs solicitados")
 
                 for item in response.get("items", []):
                     vid_id = item["id"]
@@ -416,8 +420,16 @@ class YouTubeService:
                             total_minutes += 1
 
                         durations[vid_id] = total_minutes
+                        
+                        # DEBUG: Log de conversão
+                        self.logger.debug(
+                            f"🔍 Duração parseada: {duration_str} → {hours}h {minutes}m {seconds}s = {total_minutes}min"
+                        )
                     else:
                         # Fallback: assumir 0 se não conseguir parsear
+                        self.logger.warning(
+                            f"⚠️ Não conseguiu parsear duração: {duration_str} para vídeo {vid_id}"
+                        )
                         durations[vid_id] = 0
 
             except Exception as e:
@@ -900,6 +912,17 @@ class YouTubeService:
                 f"⚡ Batch API: {len(candidate_ids)} vídeos em {elapsed:.2f}s "
                 f"({speed:.1f} vídeos/s) - Economia: {len(candidate_ids)-1} chamadas API!"
             )
+            
+            # DEBUG: Verificar durations retornado
+            self.logger.debug(
+                f"🔍 Dicionário durations: {len(durations)} itens retornados de {len(candidate_ids)} solicitados"
+            )
+            if len(durations) == 0:
+                self.logger.warning("⚠️ ATENÇÃO: Dicionário durations está VAZIO!")
+            elif len(durations) < len(candidate_ids):
+                self.logger.warning(
+                    f"⚠️ ATENÇÃO: Faltam {len(candidate_ids) - len(durations)} durações!"
+                )
 
             # 📊 LOG AUTOPLAY: Resultado batch duration API
             autoplay_logger.log_batch_duration_api(
