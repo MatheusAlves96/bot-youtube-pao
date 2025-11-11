@@ -91,28 +91,25 @@ class BotRunner:
                 future = asyncio.run_coroutine_threadsafe(
                     self.music_bot.shutdown(), self.loop
                 )
-                # Aguardar até 3 segundos pelo encerramento (reduzido de 5s)
+                # Aguardar até 2 segundos pelo encerramento
                 try:
-                    future.result(timeout=3)
+                    future.result(timeout=2)
                 except TimeoutError:
-                    self.logger.warning("⏱️  Timeout no encerramento (3s)")
+                    self.logger.debug("⏱️  Timeout no encerramento (esperado)")
+                except (asyncio.CancelledError, RuntimeError) as e:
+                    # CancelledError e Session closed são normais
+                    if "Session is closed" not in str(e):
+                        self.logger.debug(f"Erro durante shutdown: {e}")
                 except Exception as e:
-                    # Ignorar erros esperados durante shutdown
-                    if "Session is closed" in str(e) or "CancelledError" in str(e):
-                        self.logger.debug(f"Erro esperado no shutdown: {e}")
-                    else:
-                        self.logger.warning(f"Erro no encerramento: {e}")
+                    self.logger.debug(f"Erro no encerramento: {e}")
 
-            # Aguardar thread terminar
+            # Aguardar thread terminar (timeout curto)
             if self.bot_thread and self.bot_thread.is_alive():
-                self.logger.info("Aguardando thread do bot...")
-                self.bot_thread.join(timeout=2)
-
-                if self.bot_thread.is_alive():
-                    self.logger.warning("⚠️  Thread não respondeu a tempo")
+                self.bot_thread.join(timeout=1)
+                # Não logar se thread ainda está viva - é normal
 
         except Exception as e:
-            self.logger.error(f"Erro durante encerramento: {e}")
+            self.logger.debug(f"Erro durante encerramento: {e}")
         finally:
             self.logger.info("✅ Encerramento concluído")
 
