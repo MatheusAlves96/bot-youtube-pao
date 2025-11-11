@@ -15,7 +15,7 @@ from google.auth.transport.requests import Request
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
 
-from core.logger import LoggerFactory
+from core.logger import LoggerFactory, autoplay_logger
 from config import config
 from utils.quota_tracker import quota_tracker
 
@@ -484,6 +484,14 @@ class YouTubeService:
             self.logger.debug(
                 f"   Tipo: {query_type} | Gênero: {detected_genre} | Internacional: {is_international}"
             )
+            
+            # 📊 LOG AUTOPLAY: Estratégia de busca
+            strategy_sources = ["IA Groq", "IA variação", "IA aleatório", "IA brasileiro"]
+            autoplay_logger.log_search_strategy(
+                strategy=search_strategy,
+                query=search_query,
+                source=strategy_sources[search_strategy] if search_strategy < len(strategy_sources) else "Desconhecido"
+            )
 
             # Executar busca no YouTube com a query gerada pela IA
             request = self.youtube.search().list(
@@ -498,6 +506,9 @@ class YouTubeService:
             # LOG: Quantos resultados a API retornou
             total_results = len(response.get("items", []))
             self.logger.info(f"📊 API retornou {total_results} resultados da busca")
+            
+            # 📊 LOG AUTOPLAY: Resultado da API search
+            autoplay_logger.log_api_search(total_results, quota_used=100)
 
             videos = []
 
@@ -847,6 +858,9 @@ class YouTubeService:
             self.logger.info(
                 f"📦 Processando {len(video_candidates)} candidatos em batch"
             )
+            
+            # 📊 LOG AUTOPLAY: Início do batch processing
+            autoplay_logger.log_batch_processing(len(video_candidates))
 
             # Extrair apenas os IDs
             candidate_ids = [c["id"] for c in video_candidates]
@@ -854,6 +868,7 @@ class YouTubeService:
             # Se não há candidatos, retornar lista vazia
             if not candidate_ids:
                 self.logger.warning("⚠️ Nenhum candidato passou nos filtros iniciais")
+                autoplay_logger.log_filter_summary(0, 0, config.AUTOPLAY_MIN_DURATION, config.AUTOPLAY_MAX_DURATION)
                 return []
 
             # Buscar durações em batch (98% menos quota!)
@@ -870,6 +885,14 @@ class YouTubeService:
                 f"⚡ Batch API: {len(candidate_ids)} vídeos em {elapsed:.2f}s "
                 f"({speed:.1f} vídeos/s) - Economia: {len(candidate_ids)-1} chamadas API!"
             )
+            
+            # 📊 LOG AUTOPLAY: Resultado batch duration API
+            autoplay_logger.log_batch_duration_api(
+                len(candidate_ids),
+                elapsed,
+                speed,
+                len(candidate_ids) - 1
+            )
 
             # Filtrar por duração e criar lista final
             videos = []
@@ -885,20 +908,36 @@ class YouTubeService:
 
                 # Filtrar vídeos muito longos (configurável via AUTOPLAY_MAX_DURATION)
                 if duration_minutes > config.AUTOPLAY_MAX_DURATION:
-                    self.logger.debug(
-                        f"   ⏭️ Excluído (muito longo - {duration_minutes} min > {config.AUTOPLAY_MAX_DURATION} min)"
+                    reason = f"Muito longo ({duration_minutes}min > {config.AUTOPLAY_MAX_DURATION}min)"
+                    self.logger.debug(f"   ⏭️ Excluído - {reason}")
+                    autoplay_logger.log_duration_filter(
+                        item['snippet']['title'],
+                        duration_minutes,
+                        reason,
+                        passed=False
                     )
                     continue
 
                 # Filtrar vídeos muito curtos (configurável via AUTOPLAY_MIN_DURATION)
                 if duration_minutes < config.AUTOPLAY_MIN_DURATION:
-                    self.logger.debug(
-                        f"   ⏭️ Excluído (muito curto - {duration_minutes} min < {config.AUTOPLAY_MIN_DURATION} min)"
+                    reason = f"Muito curto ({duration_minutes}min < {config.AUTOPLAY_MIN_DURATION}min)"
+                    self.logger.debug(f"   ⏭️ Excluído - {reason}")
+                    autoplay_logger.log_duration_filter(
+                        item['snippet']['title'],
+                        duration_minutes,
+                        reason,
+                        passed=False
                     )
                     continue
 
                 # LOG: Vídeo aprovado!
                 self.logger.debug(f"   ✅ APROVADO após filtro de duração!")
+                autoplay_logger.log_duration_filter(
+                    item['snippet']['title'],
+                    duration_minutes,
+                    f"Dentro dos limites ({config.AUTOPLAY_MIN_DURATION}-{config.AUTOPLAY_MAX_DURATION}min)",
+                    passed=True
+                )
 
                 # Adicionar à lista final
                 video = {
@@ -919,10 +958,21 @@ class YouTubeService:
                 f"✅ Filtrados {len(videos)} vídeos de {len(video_candidates)} candidatos "
                 f"({len(video_candidates) - len(videos)} rejeitados por duração)"
             )
+            
+            # 📊 LOG AUTOPLAY: Resumo dos filtros de duração
+            autoplay_logger.log_filter_summary(
+                approved=len(videos),
+                rejected=len(video_candidates) - len(videos),
+                min_duration=config.AUTOPLAY_MIN_DURATION,
+                max_duration=config.AUTOPLAY_MAX_DURATION
+            )
 
             # 🤖 VALIDAÇÃO FINAL COM IA
             if videos and len(videos) > 0:
                 self.logger.info(f"🤖 Validando {len(videos)} vídeos com IA...")
+                
+                # 📊 LOG AUTOPLAY: Início da validação IA
+                autoplay_logger.log_ai_validation_start(len(videos))
 
                 # Importar AI service dentro da função para evitar import circular
                 from services.ai_service import ai_service

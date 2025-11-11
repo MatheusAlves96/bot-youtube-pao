@@ -10,8 +10,9 @@ import aiohttp
 from typing import Optional, List, Dict, Any, Callable
 from collections import deque, OrderedDict
 from datetime import datetime
+import time
 
-from core.logger import LoggerFactory
+from core.logger import LoggerFactory, autoplay_logger
 from config import config
 
 
@@ -1408,6 +1409,10 @@ class MusicService:
             if player.is_fetching_autoplay:  # Double-check após adquirir lock
                 return
             player.is_fetching_autoplay = True
+        
+        # ⏱️ Iniciar cronômetro da sessão
+        session_start_time = time.time()
+        
         self.logger.debug(
             f"🔍 Autoplay iniciado - Modo: {'proativo' if proactive else 'reativo'}, Fila atual: {len(player.queue)}"
         )
@@ -1425,9 +1430,17 @@ class MusicService:
 
             if not video_id:
                 self.logger.warning("⚠️ Autoplay: Nenhum vídeo de referência disponível")
+                autoplay_logger.log_error("Nenhum vídeo de referência disponível")
                 player.is_fetching_autoplay = False
                 return
 
+            # 📊 LOG: Início da sessão autoplay
+            autoplay_logger.log_session_start({
+                'title': video_title,
+                'channel': video_channel,
+                'id': video_id
+            })
+            
             self.logger.info(
                 f"🎯 Autoplay usando como base: '{video_title}' de {video_channel}"
             )
@@ -1460,6 +1473,13 @@ class MusicService:
                 player.autoplay_failures += 1
                 self.logger.warning(
                     f"⚠️ Autoplay: Nenhum vídeo encontrado (falha {player.autoplay_failures})"
+                )
+                
+                # 📊 LOG: Falha na tentativa
+                autoplay_logger.log_failure(
+                    attempt=player.autoplay_failures,
+                    max_attempts=2,
+                    reason="Nenhum vídeo encontrado após filtros"
                 )
 
                 # Após 2 falhas, mudar estratégia
@@ -1591,6 +1611,12 @@ class MusicService:
                     self.logger.debug(
                         f"✅ Música adicionada à fila: {song.title} | Total na fila: {len(player.queue)}"
                     )
+                    
+                    # 📊 LOG AUTOPLAY: Vídeo adicionado à fila
+                    autoplay_logger.log_queue_added(
+                        video_title=song.title,
+                        queue_position=len(player.queue)
+                    )
 
                     # � OTIMIZAÇÃO: Enviar mensagem em background (não bloqueia)
                     if not proactive and player.text_channel:
@@ -1626,9 +1652,26 @@ class MusicService:
                     self.logger.debug(
                         f"🎵 Autoplay proativo concluído - {len(player.queue)} músicas na fila (sem auto-start)"
                     )
+            
+            # 📊 LOG: Sessão bem-sucedida
+            session_time = time.time() - session_start_time
+            autoplay_logger.log_session_end(
+                success=True,
+                videos_added=len(added_songs),
+                total_time=session_time
+            )
 
         except Exception as e:
             self.logger.error(f"❌ Erro no autoplay: {e}")
+            autoplay_logger.log_error("Erro crítico no autoplay", e)
+            
+            # 📊 LOG: Sessão com falha
+            session_time = time.time() - session_start_time
+            autoplay_logger.log_session_end(
+                success=False,
+                videos_added=0,
+                total_time=session_time
+            )
 
         finally:
             player.is_fetching_autoplay = False

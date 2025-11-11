@@ -7,7 +7,7 @@ import aiohttp
 import asyncio
 import json
 from typing import Optional, Dict, Any, List
-from core.logger import LoggerFactory
+from core.logger import LoggerFactory, autoplay_logger
 from config import config
 from utils.quota_tracker import quota_tracker
 
@@ -532,6 +532,8 @@ IMPORTANTE:
                     # Processar resultados
                     validated_videos = []
                     validations = validation_data.get("validations", [])
+                    approved_count = 0
+                    rejected_count = 0
 
                     for i, video in enumerate(videos):
                         validation = next(
@@ -541,6 +543,7 @@ IMPORTANTE:
                         if validation:
                             approved = validation.get("approved", False)
                             reason = validation.get("reason", "Validado pela IA")
+                            confidence = 0.95 if approved else 0.85  # Mock confidence
 
                             validated_videos.append(
                                 {**video, "approved": approved, "reason": reason}
@@ -550,6 +553,19 @@ IMPORTANTE:
                             self.logger.info(
                                 f"{status} IA validação [{i+1}]: \"{video['title'][:50]}...\" - {reason}"
                             )
+                            
+                            # 📊 LOG AUTOPLAY: Resultado da validação IA por vídeo
+                            autoplay_logger.log_ai_validation_result(
+                                video_title=video['title'],
+                                approved=approved,
+                                reason=reason,
+                                confidence=confidence
+                            )
+                            
+                            if approved:
+                                approved_count += 1
+                            else:
+                                rejected_count += 1
                         else:
                             # Se não encontrou validação, aprovar por segurança
                             validated_videos.append(
@@ -559,6 +575,14 @@ IMPORTANTE:
                                     "reason": "Validação não encontrada (aprovado)",
                                 }
                             )
+                            approved_count += 1
+                    
+                    # 📊 LOG AUTOPLAY: Resumo da validação IA
+                    autoplay_logger.log_ai_summary(
+                        approved=approved_count,
+                        rejected=rejected_count,
+                        quota_used=1
+                    )
 
                     return validated_videos
 
