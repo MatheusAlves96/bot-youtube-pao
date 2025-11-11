@@ -334,6 +334,7 @@ class YouTubeService:
 
             # Executar com retry (3 tentativas com backoff exponencial)
             import asyncio
+
             loop = asyncio.get_event_loop()
             response = await loop.run_in_executor(None, request.execute)
 
@@ -357,6 +358,66 @@ class YouTubeService:
         except HttpError as e:
             self.logger.error(f"Erro ao obter informações do vídeo: {e}")
             return None
+
+    async def get_videos_duration_batch(self, video_ids: List[str]) -> Dict[str, int]:
+        """
+        Busca duração de múltiplos vídeos em UMA chamada (BATCH)
+        
+        Args:
+            video_ids: Lista de IDs (máximo 50 por batch)
+            
+        Returns:
+            Dict mapping video_id -> duration_minutes
+        """
+        if not video_ids:
+            return {}
+        
+        if not self.youtube:
+            await self.initialize()
+        
+        durations = {}
+        
+        # Processar em lotes de 50 (limite da API do YouTube)
+        BATCH_SIZE = 50
+        for i in range(0, len(video_ids), BATCH_SIZE):
+            batch = video_ids[i:i+BATCH_SIZE]
+            ids_str = ",".join(batch)
+            
+            try:
+                # UMA chamada para múltiplos vídeos! (98% menos quota)
+                quota_tracker.track_operation("videos_list_batch", f"{len(batch)} videos")
+                
+                request = self.youtube.videos().list(
+                    part="contentDetails",
+                    id=ids_str  # Múltiplos IDs separados por vírgula
+                )
+                
+                loop = asyncio.get_event_loop()
+                response = await loop.run_in_executor(None, request.execute)
+                
+                for item in response.get("items", []):
+                    vid_id = item["id"]
+                    duration_str = item["contentDetails"]["duration"]
+                    
+                    # Parsear duração ISO 8601
+                    hours = 0
+                    minutes = 0
+                    
+                    hours_match = DURATION_HOURS_PATTERN.search(duration_str)
+                    minutes_match = DURATION_MINUTES_PATTERN.search(duration_str)
+                    
+                    if hours_match:
+                        hours = int(hours_match.group(1))
+                    if minutes_match:
+                        minutes = int(minutes_match.group(1))
+                    
+                    total_minutes = hours * 60 + minutes
+                    durations[vid_id] = total_minutes
+                    
+            except Exception as e:
+                self.logger.debug(f"Erro ao buscar batch de durações: {e}")
+        
+        return durations
 
     async def get_related_videos(
         self,
