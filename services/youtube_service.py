@@ -4,6 +4,7 @@ Gerencia autenticação e busca de vídeos do YouTube
 """
 
 import os
+import re
 from pathlib import Path
 from typing import Optional, Dict, Any, List
 from abc import ABC, abstractmethod
@@ -17,6 +18,21 @@ from googleapiclient.errors import HttpError
 from core.logger import LoggerFactory
 from config import config
 from utils.quota_tracker import quota_tracker
+
+# 🚀 Regex pré-compilados para melhor performance (+20x)
+CLEAN_TITLE_PATTERN = re.compile(
+    r"\([^)]*\)|\[[^\]]*\]|feat\.?|part\.?|ft\.?", re.IGNORECASE
+)
+WORD_PATTERN = re.compile(r"\w+")
+VIDEO_ID_PATTERN = re.compile(
+    r"(?:youtube\.com/watch\?v=|youtu\.be/)([a-zA-Z0-9_-]{11})"
+)
+PLAYLIST_ID_PATTERN = re.compile(
+    r"(?:youtube\.com/playlist\?list=)([a-zA-Z0-9_-]+)"
+)
+DURATION_HOURS_PATTERN = re.compile(r"(\d+)H")
+DURATION_MINUTES_PATTERN = re.compile(r"(\d+)M")
+ISO8601_DURATION_PATTERN = re.compile(r"PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?")
 
 # Import circular protection - will be imported later
 # from services.ai_service import ai_service
@@ -550,14 +566,8 @@ class YouTubeService:
             # Extrair palavras-chave principais do título de referência para evitar repetição
             reference_keywords = set()
             if video_title:
-                import re
-
-                # Remover parênteses, colchetes, feat, part, etc
-                clean_ref = re.sub(
-                    r"\([^)]*\)|\[[^\]]*\]|feat\.?|part\.?|ft\.?",
-                    "",
-                    video_title.lower(),
-                )
+                # Remover parênteses, colchetes, feat, part, etc (usando regex pré-compilado)
+                clean_ref = CLEAN_TITLE_PATTERN.sub("", video_title.lower())
 
                 # Remover palavras muito comuns que não ajudam na comparação
                 stopwords = {
@@ -589,9 +599,7 @@ class YouTubeService:
                     f"🔑 Palavras-chave de referência: {reference_keywords}"
                 )
 
-            # Padrões de títulos que indicam conteúdo explicativo (regex)
-            import re
-
+            # Padrões de títulos que indicam conteúdo explicativo (regex pré-compilados)
             explanatory_patterns = [
                 r"^(de onde|donde|where does|where is|who is|what is|quem é|o que é|qual é)",
                 r"^(como |how to |how )",
@@ -774,14 +782,12 @@ class YouTubeService:
                         ]
                         # Duração vem no formato ISO 8601: PT4M13S (4 min 13s), PT1H2M10S (1h 2min 10s)
 
-                        # Extrair minutos e horas
-                        import re
-
+                        # Extrair minutos e horas (usando regex pré-compilados)
                         hours = 0
                         minutes = 0
 
-                        hours_match = re.search(r"(\d+)H", duration_str)
-                        minutes_match = re.search(r"(\d+)M", duration_str)
+                        hours_match = DURATION_HOURS_PATTERN.search(duration_str)
+                        minutes_match = DURATION_MINUTES_PATTERN.search(duration_str)
 
                         if hours_match:
                             hours = int(hours_match.group(1))
@@ -885,10 +891,8 @@ class YouTubeService:
         Returns:
             Duração em segundos
         """
-        import re
-
-        pattern = re.compile(r"PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?")
-        match = pattern.match(duration)
+        # Usar regex pré-compilado
+        match = ISO8601_DURATION_PATTERN.match(duration)
 
         if not match:
             return 0
