@@ -26,6 +26,10 @@ class Song:
         self.stream_url = data.get("stream_url", "")
         self.requester = requester
         self.requested_at = datetime.now()
+        
+        # TTL para stream URL (URLs do YouTube expiram em ~6h, usar 5h de segurança)
+        import time
+        self.stream_url_expires = time.time() + (5 * 3600)  # 5 horas
 
     def __str__(self):
         return f"{self.title} - {self.uploader}"
@@ -371,6 +375,9 @@ class MusicService:
         playlist_options["no_warnings"] = True
         playlist_options["quiet"] = False  # Mostrar progresso
         self.ytdl_playlist = yt_dlp.YoutubeDL(playlist_options)
+
+        # 🧹 Iniciar task de cleanup de players inativos
+        asyncio.create_task(self.cleanup_inactive_players())
 
     def get_player(self, guild_id: int) -> MusicPlayer:
         """Obtém ou cria um player para o servidor"""
@@ -724,6 +731,37 @@ class MusicService:
             self.logger.warning(f"⚠️ Erro ao pré-carregar música: {e}")
             # Não é crítico, apenas log
 
+    async def _ensure_valid_stream_url(self, song: Song):
+        """
+        Garante que a URL do stream é válida e não expirou
+        
+        Args:
+            song: Música a validar
+        """
+        import time
+        
+        # Verificar se a URL expirou
+        if time.time() > song.stream_url_expires:
+            self.logger.info(f"🔄 Stream URL expirada, re-extraindo: {song.title}")
+            
+            try:
+                # Re-extrair informações do vídeo
+                loop = asyncio.get_event_loop()
+                data = await loop.run_in_executor(
+                    None, lambda: self.ytdl.extract_info(song.url, download=False)
+                )
+                
+                if data:
+                    # Atualizar stream URL
+                    song.stream_url = data.get("url", song.stream_url)
+                    # Renovar TTL
+                    song.stream_url_expires = time.time() + (5 * 3600)
+                    self.logger.info(f"✅ Stream URL renovada: {song.title}")
+                    
+            except Exception as e:
+                self.logger.error(f"❌ Erro ao renovar stream URL: {e}")
+                # Manter URL antiga e tentar tocar mesmo assim
+
     async def play_song(
         self, player: MusicPlayer, voice_client: discord.VoiceClient, song: Song
     ):
@@ -747,6 +785,9 @@ class MusicService:
         # 🎛️ Iniciar/atualizar painel de controle
         await self.update_control_panel(player)
         await self.start_panel_updates(player)
+
+        # 🔄 Validar e renovar stream URL se necessário
+        await self._ensure_valid_stream_url(song)
 
         # Criar fonte de áudio
         audio_source = discord.FFmpegPCMAudio(song.stream_url, **config.FFMPEG_OPTIONS)
@@ -1363,6 +1404,52 @@ class MusicService:
 
         finally:
             player.is_fetching_autoplay = False
+
+    async def cleanup_inactive_players(self):
+        """Remove players inativos a cada 1 hora para prevenir memory leak"""
+        import time
+        
+        while True:
+            try:
+                await asyncio.sleep(3600)  # 1 hora
+                
+                to_remove = []
+                current_time = time.time()
+                
+                for guild_id, player in self.players.items():
+                    # Verificar se player está inativo
+                    if not player.is_playing and not player.queue:
+                        # Adicionar timestamp de última atividade se não existir
+                        if not hasattr(player, '_last_activity'):
+                            player._last_activity = current_time
+                        
+                        # Se inativo há mais de 30 minutos, marcar para remoção
+                        if current_time - player._last_activity > 1800:  # 30 min
+                            to_remove.append(guild_id)
+                    else:
+                        # Player ativo, atualizar timestamp
+                        player._last_activity = current_time
+                
+                # Remover players inativos
+                for guild_id in to_remove:
+                    player = self.players.get(guild_id)
+                    if player and player.voice_client:
+                        try:
+                            await player.voice_client.disconnect()
+                        except Exception as e:
+                            self.logger.debug(f"Erro ao desconectar voice client: {e}")
+                    
+                    del self.players[guild_id]
+                    self.logger.info(f"🧹 Player removido por inatividade: guild_id={guild_id}")
+                
+                if to_remove:
+                    self.logger.info(f"🧹 Cleanup concluído: {len(to_remove)} player(s) removido(s)")
+                    
+            except asyncio.CancelledError:
+                self.logger.info("🛑 Task de cleanup cancelada")
+                break
+            except Exception as e:
+                self.logger.error(f"Erro no cleanup de players: {e}")
 
     @classmethod
     def get_instance(cls) -> "MusicService":
