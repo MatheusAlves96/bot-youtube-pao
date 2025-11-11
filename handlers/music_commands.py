@@ -221,8 +221,11 @@ class MusicCommands(commands.Cog):
                             f"💡 Use `.cancelar` para interromper"
                         )
                         await processing_msg.edit(content=progress_text)
-                    except:
+                    except (discord.HTTPException, asyncio.TimeoutError) as e:
+                        self.logger.debug(f"Erro ao atualizar progresso: {e}")
                         pass  # Ignorar erros de edição (rate limit, etc)
+                    except Exception as e:
+                        self.logger.error(f"Erro inesperado ao atualizar progresso: {e}")
 
                 result = await self.music_service.extract_playlist(
                     query, ctx.author, player, update_progress
