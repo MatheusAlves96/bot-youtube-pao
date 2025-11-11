@@ -16,6 +16,10 @@ from googleapiclient.errors import HttpError
 
 from core.logger import LoggerFactory
 from config import config
+from utils.quota_tracker import quota_tracker
+
+# Import circular protection - will be imported later
+# from services.ai_service import ai_service
 
 
 class YouTubeAuthStrategy(ABC):
@@ -88,11 +92,81 @@ class YouTubeOAuth2Strategy(YouTubeAuthStrategy):
                 self.logger.info("4. Você será redirecionado automaticamente")
                 self.logger.info("=" * 60)
 
-                # Usar porta fixa 8080
-                creds = flow.run_local_server(port=8080, open_browser=True)
-                self.logger.info(
-                    "✅ Nova autenticação OAuth2 realizada com sucesso!"
-                )  # Salvar token
+                try:
+                    # Tentar múltiplas portas comuns
+                    ports_to_try = [8080, 8081, 8082]
+                    creds = None
+
+                    for port in ports_to_try:
+                        try:
+                            self.logger.info(f"Tentando porta {port}...")
+
+                            # Resetar flow para cada tentativa
+                            flow = InstalledAppFlow.from_client_secrets_file(
+                                str(credentials_path), self.SCOPES
+                            )
+
+                            redirect_uri = f"http://localhost:{port}/"
+                            flow.redirect_uri = redirect_uri
+                            auth_url, _ = flow.authorization_url(prompt="consent")
+
+                            self.logger.info("=" * 60)
+                            self.logger.info("🔗 URL de Autenticação Gerada:")
+                            self.logger.info(auth_url)
+                            self.logger.info("=" * 60)
+                            self.logger.info(f"📍 Redirect URI: {redirect_uri}")
+                            self.logger.info("=" * 60)
+                            self.logger.info(
+                                "⚠️  ADICIONE ESTA URI NO GOOGLE CLOUD CONSOLE:"
+                            )
+                            self.logger.info(f"   {redirect_uri}")
+                            self.logger.info("=" * 60)
+
+                            # Executar servidor local
+                            creds = flow.run_local_server(
+                                port=port,
+                                host="localhost",
+                                authorization_prompt_message="",
+                                success_message="✅ Autenticação concluída! Você pode fechar esta aba.",
+                                open_browser=True,
+                            )
+
+                            self.logger.info(
+                                f"✅ Autenticação OAuth2 realizada na porta {port}!"
+                            )
+                            break  # Sucesso, sair do loop
+
+                        except OSError as e:
+                            self.logger.warning(f"Porta {port} não disponível: {e}")
+                            continue
+
+                    if not creds:
+                        raise Exception(
+                            "Nenhuma porta disponível para autenticação OAuth2"
+                        )
+
+                    self.logger.info(
+                        "✅ Nova autenticação OAuth2 realizada com sucesso!"
+                    )
+                except Exception as oauth_error:
+                    self.logger.error(f"❌ Erro na autenticação OAuth2: {oauth_error}")
+                    if "404" in str(oauth_error):
+                        raise Exception(
+                            "❌ ERRO 404 - URLs de redirecionamento OAuth2 incorretas!\n"
+                            "Solução:\n"
+                            "1. Acesse: https://console.cloud.google.com\n"
+                            "2. Vá em APIs e Serviços > Credenciais\n"
+                            "3. Edite suas credenciais OAuth2\n"
+                            "4. Atualize as URIs de redirecionamento para:\n"
+                            "   - http://localhost:8080/\n"
+                            "   - http://localhost:8080\n"
+                            "   - http://localhost/\n"
+                            "5. Remova: urn:ietf:wg:oauth:2.0:oob (descontinuada)\n"
+                            "6. Aguarde 2-3 minutos e tente novamente\n\n"
+                            f"Consulte o arquivo CORRECAO_OAUTH_GOOGLE.md para instruções detalhadas."
+                        )
+                    else:
+                        raise oauth_error  # Salvar token
             token_path.parent.mkdir(parents=True, exist_ok=True)
             with open(token_path, "w") as token:
                 token.write(creds.to_json())
@@ -181,7 +255,15 @@ class YouTubeService:
         if not self.youtube:
             await self.initialize()
 
+        # Verifica se pode fazer a requisição
+        if not quota_tracker.can_make_request("search"):
+            self.logger.error("❌ Quota insuficiente para buscar vídeos")
+            return []
+
         try:
+            # Registra uso antes da requisição
+            quota_tracker.track_operation("search", f"query: {query[:50]}")
+
             request = self.youtube.search().list(
                 part="snippet",
                 q=query,
@@ -223,7 +305,15 @@ class YouTubeService:
         if not self.youtube:
             await self.initialize()
 
+        # Verifica se pode fazer a requisição
+        if not quota_tracker.can_make_request("videos_list"):
+            self.logger.error("❌ Quota insuficiente para obter info do vídeo")
+            return None
+
         try:
+            # Registra uso antes da requisição
+            quota_tracker.track_operation("videos_list", f"video_id: {video_id}")
+
             request = self.youtube.videos().list(
                 part="snippet,contentDetails,statistics", id=video_id
             )
@@ -250,6 +340,564 @@ class YouTubeService:
         except HttpError as e:
             self.logger.error(f"Erro ao obter informações do vídeo: {e}")
             return None
+
+    async def get_related_videos(
+        self,
+        video_id: str,
+        max_results: int = 5,
+        exclude_ids: List[str] = None,
+        video_title: str = None,
+        video_channel: str = None,
+        search_strategy: int = 0,
+        history_titles: List[str] = None,
+    ) -> List[Dict[str, Any]]:
+        """
+        Busca vídeos relacionados usando IA para gerar queries inteligentes
+
+        Args:
+            video_id: ID do vídeo de referência
+            max_results: Número máximo de resultados
+            exclude_ids: Lista de IDs para excluir
+            video_title: Título do vídeo
+            video_channel: Canal do vídeo
+            search_strategy: Estratégia de busca (0-3)
+            history_titles: Títulos já tocados (para IA evitar)
+
+        Returns:
+            Lista de vídeos relacionados
+        """
+        if not self.youtube:
+            await self.initialize()
+
+        # Verifica se pode fazer a requisição
+        if not quota_tracker.can_make_request("search"):
+            self.logger.error("❌ Quota insuficiente para buscar relacionados")
+            return []
+
+        exclude_ids = exclude_ids or []
+        history_titles = history_titles or []
+
+        try:
+            # Registra uso antes da requisição
+            quota_tracker.track_operation(
+                "search", f"autoplay (estratégia {search_strategy})"
+            )
+
+            # 🤖 USAR IA PARA GERAR QUERY INTELIGENTE
+            from services.ai_service import ai_service
+
+            analysis = await ai_service.generate_autoplay_query(
+                current_title=video_title or "",
+                current_channel=video_channel or "",
+                history=history_titles,
+                strategy=search_strategy,
+            )
+
+            search_query = analysis.get("query", "música brasileira")
+            query_type = analysis.get("tipo", "unknown")
+            detected_genre = analysis.get("genero", "unknown")
+            is_international = analysis.get("internacional", False)
+
+            self.logger.info(
+                f"🎵 Query gerada (estratégia {search_strategy}): '{search_query}'"
+            )
+            self.logger.debug(
+                f"   Tipo: {query_type} | Gênero: {detected_genre} | Internacional: {is_international}"
+            )
+
+            # Executar busca no YouTube com a query gerada pela IA
+            request = self.youtube.search().list(
+                part="snippet",
+                q=search_query,
+                type="video",
+                maxResults=max_results * 3,
+                videoCategoryId="10",  # Importante: Apenas categoria Música
+            )
+            response = request.execute()
+
+            # LOG: Quantos resultados a API retornou
+            total_results = len(response.get("items", []))
+            self.logger.info(f"📊 API retornou {total_results} resultados da busca")
+
+            videos = []
+
+            # Palavras que indicam que NÃO é uma música (conteúdo indesejado)
+            excluded_keywords = [
+                # Entrevistas e talks
+                "podcast",
+                "interview",
+                "entrevista",
+                "bate-papo",
+                "conversa",
+                "papo",
+                # Reações e análises
+                "react",
+                "reação",
+                "reagindo",
+                "reagiu",
+                "reaction",
+                "análise",
+                "analisa",
+                "analisando",
+                "review",
+                # Gaming
+                "gameplay",
+                "jogando",
+                "playing",
+                # Tutoriais e explicações
+                "tutorial",
+                "como fazer",
+                "aprenda",
+                "aula",
+                "explicação",
+                "explicando",
+                "explica",
+                "ensina",
+                "dica",
+                "dicas",
+                # Documentários e histórias
+                "história",
+                "historia",
+                "story",
+                "história de",
+                "origem",
+                "de onde vem",
+                "quem é",
+                "conhecendo",
+                "conhece",
+                "documentário",
+                "documentary",
+                # Bastidores e making of
+                "making of",
+                "bastidores",
+                "behind the scenes",
+                "gravação",
+                "gravando",
+                "estúdio",
+                "studio",
+                # Vlogs e daily content
+                "vlog",
+                "diary",
+                "dia a dia",
+                "rotina",
+                # Desafios
+                "challenge",
+                "desafio",
+                # Descobertas
+                "first time",
+                "primeira vez",
+                "descobriu",
+                "descobrindo",
+                "descobri",
+                "conheci",
+                "meets",
+                # Playlists e compilações
+                "playlist",
+                "compilation",
+                "compilação",
+                "os melhores",
+                "as melhores",
+                "best of",
+                "top 10",
+                "top 20",
+                "top 50",
+                "coletânea",
+                "mix",
+                "mashup",
+                "medley",
+                "1 hora",
+                "2 horas",
+                "3 horas",
+                "hour",
+                "hours",
+                # Shorts e redes sociais
+                "shorts",
+                "tiktok",
+                "melhores momentos",
+                # Transmissões
+                "lives",
+                "ao vivo",
+                "full stream",
+                "stream",
+                "transmissão",
+            ]
+
+            # Palavras que indicam versões alternativas (devem ser evitadas para diversidade)
+            # Nota: "acústico" não está aqui pois pode ser o estilo original da música
+            alternative_version_keywords = [
+                "cover",
+                "remix",
+                "versão",
+                "version",
+                "letra",
+                "lyrics",
+                "lyric video",
+                "instrumental",
+                "karaoke",
+                "piano version",
+                "guitar version",
+                "violão version",
+                "live",
+                "ao vivo",
+                "unplugged",
+                "slowed",
+                "reverb",
+                "sped up",
+                "nightcore",
+                "8d audio",
+            ]
+
+            # Extrair palavras-chave principais do título de referência para evitar repetição
+            reference_keywords = set()
+            if video_title:
+                import re
+
+                # Remover parênteses, colchetes, feat, part, etc
+                clean_ref = re.sub(
+                    r"\([^)]*\)|\[[^\]]*\]|feat\.?|part\.?|ft\.?",
+                    "",
+                    video_title.lower(),
+                )
+
+                # Remover palavras muito comuns que não ajudam na comparação
+                stopwords = {
+                    "música",
+                    "music",
+                    "official",
+                    "video",
+                    "audio",
+                    "clipe",
+                    "com",
+                    "the",
+                    "de",
+                    "da",
+                    "do",
+                    "em",
+                    "para",
+                }
+
+                # Pegar palavras principais (mais de 3 letras) exceto stopwords
+                reference_keywords = set(
+                    word
+                    for word in clean_ref.split()
+                    if len(word) > 3 and word not in stopwords
+                )
+
+            # LOG: Palavras-chave extraídas da referência
+            if reference_keywords:
+                self.logger.debug(
+                    f"🔑 Palavras-chave de referência: {reference_keywords}"
+                )
+
+            # Padrões de títulos que indicam conteúdo explicativo (regex)
+            import re
+
+            explanatory_patterns = [
+                r"^(de onde|donde|where does|where is|who is|what is|quem é|o que é|qual é)",
+                r"^(como |how to |how )",
+                r"^(por que|porque|why )",
+                r"^(conheça|conhece|meet |discover )",
+                r"\?$",  # Títulos que terminam com ?
+            ]
+
+            # Palavras suspeitas em nomes de canais (indicam canais de conteúdo não-musical)
+            suspicious_channel_keywords = [
+                "documentary",
+                "documentário",
+                "docs",
+                "história",
+                "historia",
+                "explica",
+                "explains",
+                "educação",
+                "education",
+                "tutorial",
+                "aprenda",
+                "learn",
+                "podcast",
+                "cast",
+            ]
+
+            for item in response.get("items", []):
+                vid_id = item["id"]["videoId"]
+                title = item["snippet"]["title"]
+                title_lower = title.lower()
+                channel_name = item["snippet"]["channelTitle"]
+                channel_lower = channel_name.lower()
+
+                # LOG: Analisando cada vídeo
+                self.logger.debug(f"🔍 Analisando: {title} [{channel_name}]")
+
+                # Pula vídeos excluídos
+                if vid_id in exclude_ids or vid_id == video_id:
+                    self.logger.debug(f"   ⏭️ Pulado (já na fila ou é o vídeo atual)")
+                    continue
+
+                # Filtro 0: Detectar títulos explicativos por padrão (regex)
+                is_explanatory = False
+                for pattern in explanatory_patterns:
+                    if re.search(pattern, title_lower):
+                        is_explanatory = True
+                        self.logger.debug(
+                            f"   ⏭️ Excluído (título explicativo - padrão: {pattern})"
+                        )
+                        break
+                if is_explanatory:
+                    continue
+
+                # Filtro 1: Verificar se o canal é suspeito (não-musical)
+                matched_suspicious_channel = [
+                    kw for kw in suspicious_channel_keywords if kw in channel_lower
+                ]
+                if matched_suspicious_channel:
+                    self.logger.debug(
+                        f"   ⏭️ Excluído (canal suspeito - contém: {matched_suspicious_channel[0]})"
+                    )
+                    continue
+
+                # Filtro 2: Excluir vídeos com palavras-chave indesejadas
+                matched_excluded = [kw for kw in excluded_keywords if kw in title_lower]
+                if matched_excluded:
+                    self.logger.debug(
+                        f"   ⏭️ Excluído (não é música - contém: {matched_excluded[0]})"
+                    )
+                    continue
+
+                # Filtro 3: Excluir versões alternativas (cover, remix, etc)
+                matched_alternative = [
+                    kw for kw in alternative_version_keywords if kw in title_lower
+                ]
+                if matched_alternative:
+                    self.logger.debug(
+                        f"   ⏭️ Excluído (versão alternativa - contém: {matched_alternative[0]})"
+                    )
+                    continue
+
+                # Filtro 4: Evitar músicas muito similares (mesmo título base)
+                if reference_keywords and len(reference_keywords) > 0:
+                    # Remover stopwords do título candidato também
+                    stopwords = {
+                        "música",
+                        "music",
+                        "official",
+                        "video",
+                        "audio",
+                        "clipe",
+                        "com",
+                        "the",
+                        "de",
+                        "da",
+                        "do",
+                        "em",
+                        "para",
+                    }
+                    title_words = set(
+                        word
+                        for word in title_lower.split()
+                        if len(word) > 3 and word not in stopwords
+                    )
+                    common_words = reference_keywords & title_words
+
+                    # LOG: Mostrar análise de similaridade
+                    similarity_percent = (
+                        (len(common_words) / len(reference_keywords) * 100)
+                        if len(reference_keywords) > 0
+                        else 0
+                    )
+                    self.logger.debug(
+                        f"   📊 Similaridade: {len(common_words)}/{len(reference_keywords)} palavras ({similarity_percent:.0f}%) - Comuns: {common_words}"
+                    )
+
+                    # Filtro de similaridade ajustado: só excluir se for MUITO similar (100%)
+                    # Como estamos buscando por gênero (não por título), títulos similares são ok
+                    # Só queremos evitar a EXATA mesma música
+                    if (
+                        len(common_words) == len(reference_keywords)
+                        and len(common_words) >= 3
+                    ):
+                        self.logger.debug(
+                            f"   ⏭️ Excluído (exatamente a mesma música - {len(common_words)}/{len(reference_keywords)} palavras)"
+                        )
+                        continue
+
+                # Filtro: Preferir vídeos com indicadores de música
+                music_indicators = [
+                    "official",
+                    "video",
+                    "audio",
+                    "música",
+                    "music",
+                    "clipe",
+                    "lyric",
+                ]
+                has_music_indicator = any(
+                    indicator in title for indicator in music_indicators
+                )
+
+                # Se não tem indicador de música E tem menos de 3 minutos, pode ser suspeito
+                # (vamos adicionar com menor prioridade)
+
+                # Filtro: Evitar muito do mesmo artista consecutivamente
+                # Extrair nome do artista do título
+                artist_candidate = (
+                    re.split(r"[-–(|]", item["snippet"]["title"])[0].strip().lower()
+                )
+                artist_reference = (
+                    re.split(r"[-–(|]", video_title)[0].strip().lower()
+                    if video_title
+                    else ""
+                )
+
+                # LOG: Comparação de artistas
+                self.logger.debug(
+                    f"   🎤 Artista candidato: '{artist_candidate}' vs referência: '{artist_reference}'"
+                )
+
+                # DESATIVADO: Filtro de diversidade de artista
+                # Como estamos buscando por gênero, é normal ter vários do mesmo artista
+                # O filtro de similaridade já cuida de evitar músicas repetidas
+                # same_artist = artist_candidate == artist_reference
+                # if same_artist and len(videos) >= 1:
+                #     ...continue
+
+                # Filtro 5: Verificar duração do vídeo (evitar playlists/compilações longas)
+                # Buscar detalhes do vídeo para obter duração
+                try:
+                    video_details_request = self.youtube.videos().list(
+                        part="contentDetails", id=vid_id
+                    )
+                    video_details = video_details_request.execute()
+
+                    if video_details.get("items"):
+                        duration_str = video_details["items"][0]["contentDetails"][
+                            "duration"
+                        ]
+                        # Duração vem no formato ISO 8601: PT4M13S (4 min 13s), PT1H2M10S (1h 2min 10s)
+
+                        # Extrair minutos e horas
+                        import re
+
+                        hours = 0
+                        minutes = 0
+
+                        hours_match = re.search(r"(\d+)H", duration_str)
+                        minutes_match = re.search(r"(\d+)M", duration_str)
+
+                        if hours_match:
+                            hours = int(hours_match.group(1))
+                        if minutes_match:
+                            minutes = int(minutes_match.group(1))
+
+                        total_minutes = hours * 60 + minutes
+
+                        # LOG: Duração do vídeo
+                        self.logger.debug(f"   ⏱️ Duração: {total_minutes} minutos")
+
+                        # Filtrar vídeos muito longos (mais de 10 minutos = provavelmente playlist/mix)
+                        if total_minutes > 10:
+                            self.logger.debug(
+                                f"   ⏭️ Excluído (muito longo - {total_minutes} min, provavelmente playlist)"
+                            )
+                            continue
+
+                        # Filtrar vídeos muito curtos (menos de 1 minuto = shorts/tiktok)
+                        if total_minutes < 1:
+                            self.logger.debug(
+                                f"   ⏭️ Excluído (muito curto - {total_minutes} min, provavelmente short)"
+                            )
+                            continue
+
+                except Exception as e:
+                    # Se falhar ao buscar duração, não filtrar (dar benefício da dúvida)
+                    self.logger.debug(f"   ⚠️ Não foi possível obter duração: {e}")
+
+                # LOG: Vídeo aprovado!
+                self.logger.debug(f"   ✅ APROVADO! Adicionando à lista")
+
+                video = {
+                    "id": vid_id,
+                    "title": item["snippet"]["title"],
+                    "channel": item["snippet"]["channelTitle"],
+                    "thumbnail": item["snippet"]["thumbnails"]["medium"]["url"],
+                    "url": f"https://www.youtube.com/watch?v={vid_id}",
+                }
+                videos.append(video)
+
+                # Para quando atingir o número desejado
+                if len(videos) >= max_results:
+                    self.logger.info(f"🎯 Limite de {max_results} vídeos atingido")
+                    break
+
+            self.logger.info(
+                f"✅ Encontrados {len(videos)} vídeos relacionados (de {total_results} analisados)"
+            )
+
+            # 🤖 VALIDAÇÃO FINAL COM IA
+            if videos and len(videos) > 0:
+                self.logger.info(f"🤖 Validando {len(videos)} vídeos com IA...")
+
+                # Importar AI service dentro da função para evitar import circular
+                from services.ai_service import ai_service
+
+                # Validar vídeos com IA
+                validated_videos = await ai_service.validate_videos(
+                    videos=videos,
+                    reference_title=video_title or "",
+                    reference_channel=video_channel or "",
+                )
+
+                # Filtrar apenas os aprovados
+                approved_videos = [
+                    v for v in validated_videos if v.get("approved", False)
+                ]
+                rejected_count = len(videos) - len(approved_videos)
+
+                if rejected_count > 0:
+                    self.logger.info(
+                        f"🛡️ IA rejeitou {rejected_count} vídeo(s), {len(approved_videos)} aprovado(s)"
+                    )
+
+                # Remover campos auxiliares (approved, reason) antes de retornar
+                final_videos = []
+                for v in approved_videos:
+                    clean_video = {
+                        k: val
+                        for k, val in v.items()
+                        if k not in ["approved", "reason"]
+                    }
+                    final_videos.append(clean_video)
+
+                return final_videos
+
+            return videos
+
+        except HttpError as e:
+            self.logger.error(f"Erro ao buscar vídeos relacionados: {e}")
+            return []
+
+    def _parse_duration(self, duration: str) -> int:
+        """
+        Converte duração ISO 8601 para segundos
+
+        Args:
+            duration: Duração no formato ISO 8601 (ex: PT4M33S)
+
+        Returns:
+            Duração em segundos
+        """
+        import re
+
+        pattern = re.compile(r"PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?")
+        match = pattern.match(duration)
+
+        if not match:
+            return 0
+
+        hours = int(match.group(1) or 0)
+        minutes = int(match.group(2) or 0)
+        seconds = int(match.group(3) or 0)
+
+        return hours * 3600 + minutes * 60 + seconds
 
     @classmethod
     def get_instance(cls) -> "YouTubeService":

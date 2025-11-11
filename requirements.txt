@@ -23,3 +23,6 @@ pydantic>=2.5.2
 
 # Logging
 colorlog>=6.8.0
+
+# Process Management
+psutil>=5.9.0

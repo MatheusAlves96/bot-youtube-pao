@@ -6,12 +6,18 @@ Bot de música profissional para Discord que utiliza autenticação do YouTube, 
 
 > **🗺️ [ÍNDICE COMPLETO](INDICE.md)** - Navegue por toda a documentação
 
+### Para Usuários
 - **⚡ [INÍCIO RÁPIDO](INICIO_RAPIDO.md)** - Configure em 5 minutos!
 - **🔑 [GUIA DE CREDENCIAIS](GUIA_CREDENCIAIS.md)** - Bot Token vs Client ID/Secret explicado
 - **📸 [ONDE ENCONTRAR](ONDE_ENCONTRAR.md)** - Guia visual com screenshots explicativos
-- **� [OWNER_ID](OWNER_ID.md)** - Como obter seu ID de usuário do Discord
-- **�📋 [VISUAL RESUMIDO](CREDENCIAIS_VISUAL.txt)** - Resumo em ASCII art
+- **👤 [OWNER_ID](OWNER_ID.md)** - Como obter seu ID de usuário do Discord
+- **📋 [VISUAL RESUMIDO](CREDENCIAIS_VISUAL.txt)** - Resumo em ASCII art
 - **❓ [FAQ - Perguntas Frequentes](FAQ.md)** - Soluções para problemas comuns
+
+### Para Desenvolvedores
+- **🚀 [SUMÁRIO DE OTIMIZAÇÕES](SUMARIO_OTIMIZACOES.md)** - Visão executiva das melhorias (5min leitura)
+- **📊 [GUIA COMPLETO DE OTIMIZAÇÕES](OTIMIZACOES_PERFORMANCE.md)** - Documentação técnica detalhada
+- **🔬 28 Melhorias Identificadas** - Performance +400%, Quota -90%, Falhas -85%
 - **📖 Documentação Completa** - Continue lendo abaixo
 
 ---
