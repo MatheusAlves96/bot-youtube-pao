@@ -851,6 +851,11 @@ class YouTubeService:
             # Extrair apenas os IDs
             candidate_ids = [c["id"] for c in video_candidates]
 
+            # Se não há candidatos, retornar lista vazia
+            if not candidate_ids:
+                self.logger.warning("⚠️ Nenhum candidato passou nos filtros iniciais")
+                return []
+
             # Buscar durações em batch (98% menos quota!)
             import time
 
@@ -858,9 +863,12 @@ class YouTubeService:
             durations = await self.get_videos_duration_batch(candidate_ids)
             elapsed = time.time() - start_time
 
+            # Calcular velocidade (evitar divisão por zero)
+            speed = len(candidate_ids) / elapsed if elapsed > 0 else 0
+
             self.logger.info(
                 f"⚡ Batch API: {len(candidate_ids)} vídeos em {elapsed:.2f}s "
-                f"({len(candidate_ids)/elapsed:.1f} vídeos/s) - Economia: {len(candidate_ids)-1} chamadas API!"
+                f"({speed:.1f} vídeos/s) - Economia: {len(candidate_ids)-1} chamadas API!"
             )
 
             # Filtrar por duração e criar lista final
