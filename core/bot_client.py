@@ -148,55 +148,53 @@ class MusicBot:
         self.logger.info("Iniciando encerramento gracioso...")
 
         try:
-            # Desconectar de todos os canais de voz
+            # 1️⃣ PRIMEIRO: Cancelar todas as tarefas pendentes (evita recursão)
+            try:
+                loop = asyncio.get_event_loop()
+                tasks = [t for t in asyncio.all_tasks(loop) if not t.done() and t is not asyncio.current_task()]
+                if tasks:
+                    self.logger.info(f"Cancelando {len(tasks)} tarefas pendentes...")
+                    for task in tasks:
+                        task.cancel()
+                    # Aguardar cancelamento com timeout curto
+                    await asyncio.wait(tasks, timeout=1.0, return_when=asyncio.ALL_COMPLETED)
+            except Exception as e:
+                self.logger.debug(f"Erro ao cancelar tarefas: {e}")
+
+            # 2️⃣ SEGUNDO: Desconectar de todos os canais de voz
             if hasattr(self.bot, "voice_clients") and self.bot.voice_clients:
                 self.logger.info(
                     f"Desconectando de {len(self.bot.voice_clients)} canais de voz..."
                 )
                 for voice_client in list(self.bot.voice_clients):
                     try:
-                        await asyncio.wait_for(
-                            voice_client.disconnect(force=True), timeout=2.0
-                        )
+                        if voice_client.is_connected():
+                            await asyncio.wait_for(
+                                voice_client.disconnect(force=True), timeout=1.0
+                            )
                     except asyncio.TimeoutError:
-                        self.logger.warning(
-                            f"Timeout ao desconectar de {voice_client.channel}"
-                        )
+                        self.logger.debug(f"Timeout ao desconectar")
                     except Exception as e:
-                        self.logger.warning(f"Erro ao desconectar: {e}")
+                        self.logger.debug(f"Erro ao desconectar: {e}")
 
-            # Limpar sessões HTTP
-            try:
-                if hasattr(self.bot, "http") and self.bot.http:
-                    await self.bot.http.close()
-            except Exception as e:
-                self.logger.warning(f"Erro ao fechar HTTP: {e}")
-
-            # Fechar conexão do bot
+            # 3️⃣ TERCEIRO: Fechar conexão do bot (sem fechar HTTP antes - evita "Session is closed")
             if not self.bot.is_closed():
                 self.logger.info("Fechando conexão do bot...")
                 try:
-                    await asyncio.wait_for(self.bot.close(), timeout=3.0)
+                    await asyncio.wait_for(self.bot.close(), timeout=2.0)
                 except asyncio.TimeoutError:
-                    self.logger.warning("Timeout ao fechar bot, forçando...")
+                    self.logger.debug("Timeout ao fechar bot")
+                except RuntimeError as e:
+                    # "Session is closed" é esperado durante shutdown
+                    if "Session is closed" not in str(e):
+                        raise
                 except Exception as e:
-                    self.logger.warning(f"Erro ao fechar bot: {e}")
+                    self.logger.debug(f"Erro ao fechar bot: {e}")
 
             self.logger.info("✅ Bot encerrado com sucesso")
 
         except Exception as e:
             self.logger.error(f"Erro durante encerramento: {e}", exc_info=True)
-        finally:
-            # Garantir que todas as tarefas pending sejam canceladas
-            try:
-                tasks = [t for t in asyncio.all_tasks() if not t.done()]
-                if tasks:
-                    self.logger.info(f"Cancelando {len(tasks)} tarefas pendentes...")
-                    for task in tasks:
-                        task.cancel()
-                    await asyncio.gather(*tasks, return_exceptions=True)
-            except Exception as e:
-                self.logger.warning(f"Erro ao cancelar tarefas: {e}")
 
     @classmethod
     def get_instance(cls) -> "MusicBot":

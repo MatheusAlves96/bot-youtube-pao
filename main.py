@@ -91,16 +91,22 @@ class BotRunner:
                 future = asyncio.run_coroutine_threadsafe(
                     self.music_bot.shutdown(), self.loop
                 )
-                # Aguardar até 5 segundos pelo encerramento
+                # Aguardar até 3 segundos pelo encerramento (reduzido de 5s)
                 try:
-                    future.result(timeout=5)
+                    future.result(timeout=3)
+                except TimeoutError:
+                    self.logger.warning("⏱️  Timeout no encerramento (3s)")
                 except Exception as e:
-                    self.logger.warning(f"Timeout no encerramento: {e}")
+                    # Ignorar erros esperados durante shutdown
+                    if "Session is closed" in str(e) or "CancelledError" in str(e):
+                        self.logger.debug(f"Erro esperado no shutdown: {e}")
+                    else:
+                        self.logger.warning(f"Erro no encerramento: {e}")
 
             # Aguardar thread terminar
             if self.bot_thread and self.bot_thread.is_alive():
                 self.logger.info("Aguardando thread do bot...")
-                self.bot_thread.join(timeout=3)
+                self.bot_thread.join(timeout=2)
 
                 if self.bot_thread.is_alive():
                     self.logger.warning("⚠️  Thread não respondeu a tempo")
