@@ -96,6 +96,7 @@ class Config:
         self.CACHE_ENABLED = os.getenv("CACHE_ENABLED", "True").lower() == "true"
         self.CACHE_DIR = Path(os.getenv("CACHE_DIR", "cache"))
         self.CACHE_MAX_SIZE_MB = int(os.getenv("CACHE_MAX_SIZE_MB", "500"))
+        self.VIDEO_CACHE_SIZE = int(os.getenv("VIDEO_CACHE_SIZE", "100"))
 
         # Feature Flags
         self.ENABLE_PLAYLISTS = os.getenv("ENABLE_PLAYLISTS", "True").lower() == "true"

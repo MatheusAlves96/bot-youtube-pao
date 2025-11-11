@@ -458,7 +458,7 @@ class MusicService:
 
         # 🚀 Cache LRU para informações de vídeos (evita reprocessamento)
         self._video_info_cache: OrderedDict[str, Dict] = OrderedDict()
-        self._cache_max_size = 100
+        self._cache_max_size = config.VIDEO_CACHE_SIZE
         self._cache_hits = 0
         self._cache_misses = 0
 
