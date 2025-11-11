@@ -24,13 +24,13 @@ async def retry_with_backoff(
 ):
     """
     Executa função com retry exponencial em caso de falha de rede
-    
+
     Args:
         func: Função async a ser executada
         max_retries: Número máximo de tentativas (padrão: 3)
         base_delay: Delay inicial em segundos (padrão: 1s)
         exceptions: Tupla de exceções que acionam retry
-    
+
     Returns:
         Resultado da função ou None em caso de falha total
     """
@@ -40,12 +40,12 @@ async def retry_with_backoff(
         except exceptions as e:
             if attempt == max_retries - 1:  # Última tentativa
                 raise
-            
+
             delay = base_delay * (2 ** attempt)  # Exponencial: 1s, 2s, 4s
             logger = LoggerFactory.create_logger(__name__)
             logger.debug(f"⚠️ Tentativa {attempt + 1}/{max_retries} falhou: {type(e).__name__}. Retry em {delay}s...")
             await asyncio.sleep(delay)
-    
+
     return None
 
 
@@ -454,12 +454,12 @@ class MusicService:
         try:
             # Executar em thread separada com retry (3 tentativas, backoff 1s→2s→4s)
             loop = asyncio.get_event_loop()
-            
+
             async def extract_with_retry():
                 return await loop.run_in_executor(
                     None, lambda: self.ytdl.extract_info(url, download=False)
                 )
-            
+
             data = await retry_with_backoff(
                 extract_with_retry,
                 max_retries=3,
@@ -619,80 +619,106 @@ class MusicService:
             )
             ytdl_detail = yt_dlp.YoutubeDL(detail_options)
 
-            # Processar cada entrada (já limitado pelo yt-dlp)
-            for idx, entry in enumerate(entries, 1):
-                # ✅ VERIFICAR CANCELAMENTO A CADA ITEM (antes de processar)
+            # OTIMIZAÇÃO #1: Processar em batches paralelos (5 vídeos por vez)
+            BATCH_SIZE = 5
+            total_processed = 0
+            
+            for batch_start in range(0, len(entries), BATCH_SIZE):
+                batch_end = min(batch_start + BATCH_SIZE, len(entries))
+                batch = entries[batch_start:batch_end]
+                
+                # Verificar cancelamento antes de cada batch
                 if player and player.cancel_playlist_processing:
                     self.logger.info(
-                        f"🛑 Processamento cancelado após {idx-1}/{len(entries)} itens"
+                        f"🛑 Processamento cancelado após {total_processed}/{len(entries)} itens"
                     )
                     break
-
-                try:
-                    if entry is None:
-                        errors.append(f"Item {idx}: Vídeo indisponível")
+                
+                # Processar batch em paralelo
+                batch_tasks = []
+                for idx_in_batch, entry in enumerate(batch):
+                    idx = batch_start + idx_in_batch + 1
+                    
+                    async def process_entry(entry=entry, idx=idx):
+                        if entry is None:
+                            return {"error": f"Item {idx}: Vídeo indisponível"}
+                        
+                        try:
+                            # Pegar URL do vídeo
+                            video_url = entry.get("url") or entry.get("webpage_url")
+                            if not video_url:
+                                video_id = entry.get("id")
+                                if video_id:
+                                    video_url = f"https://www.youtube.com/watch?v={video_id}"
+                                else:
+                                    return {"error": f"Item {idx}: URL não encontrada"}
+                            
+                            # Extrair detalhes (em paralelo)
+                            video_data = await loop.run_in_executor(
+                                None,
+                                lambda: ytdl_detail.extract_info(video_url, download=False),
+                            )
+                            
+                            if not video_data:
+                                return {"error": f"Item {idx}: Não foi possível extrair"}
+                            
+                            title = video_data.get("title", entry.get("title", "Unknown"))
+                            
+                            return {
+                                "idx": idx,
+                                "song_data": {
+                                    "url": video_url,
+                                    "title": title,
+                                    "duration": video_data.get("duration", 0) or 0,
+                                    "thumbnail": video_data.get("thumbnail", ""),
+                                    "uploader": video_data.get("uploader", "Unknown"),
+                                    "stream_url": video_data.get("url", video_url),
+                                },
+                                "title": title
+                            }
+                        except Exception as e:
+                            error_msg = str(e)
+                            if "copyright" in error_msg.lower() or "blocked" in error_msg.lower():
+                                return {"error": f"Item {idx}: Bloqueado por direitos autorais"}
+                            elif "unavailable" in error_msg.lower():
+                                return {"error": f"Item {idx}: Vídeo indisponível"}
+                            else:
+                                return {"error": f"Item {idx}: {error_msg[:50]}"}
+                    
+                    batch_tasks.append(process_entry())
+                
+                # Aguardar batch completo
+                batch_results = await asyncio.gather(*batch_tasks, return_exceptions=True)
+                
+                # Processar resultados do batch
+                for result in batch_results:
+                    if isinstance(result, Exception):
+                        errors.append(f"Erro: {str(result)[:50]}")
                         continue
-
-                    # Pegar URL do vídeo
-                    video_url = entry.get("url") or entry.get("webpage_url")
-                    if not video_url:
-                        video_id = entry.get("id")
-                        if video_id:
-                            video_url = f"https://www.youtube.com/watch?v={video_id}"
-                        else:
-                            errors.append(f"Item {idx}: URL não encontrada")
-                            continue
-
-                    # Extrair detalhes completos do vídeo (rápido, 1 item por vez)
-                    video_data = await loop.run_in_executor(
-                        None,
-                        lambda url=video_url: ytdl_detail.extract_info(
-                            url, download=False
-                        ),
-                    )
-
-                    if not video_data:
-                        errors.append(f"Item {idx}: Não foi possível extrair")
+                    
+                    if "error" in result:
+                        errors.append(result["error"])
+                        self.logger.warning(f"❌ {result['error']}")
                         continue
-
-                    title = video_data.get("title", entry.get("title", "Unknown"))
-
-                    song_data = {
-                        "url": video_url,
-                        "title": title,
-                        "duration": video_data.get("duration", 0) or 0,
-                        "thumbnail": video_data.get("thumbnail", ""),
-                        "uploader": video_data.get("uploader", "Unknown"),
-                        "stream_url": video_data.get("url", video_url),
-                    }
-
-                    song = Song(song_data, requester)
+                    
+                    # Sucesso - criar música
+                    song = Song(result["song_data"], requester)
                     songs.append(song)
-                    self.logger.info(f"✅ {idx}/{len(entries)}: {title}")
-
-                    # Chamar callback IMEDIATAMENTE com a música (para adicionar em tempo real)
+                    total_processed += 1
+                    self.logger.info(f"✅ {result['idx']}/{len(entries)}: {result['title']}")
+                    
+                    # Callback para adicionar em tempo real
                     if progress_callback:
                         await progress_callback(
-                            current=idx,
+                            current=result['idx'],
                             total=len(entries),
                             processed=len(songs),
                             failed=len(errors),
-                            current_title=title,
-                            song=song,  # ✨ PASSAR A MÚSICA PARA SER ADICIONADA IMEDIATAMENTE
+                            current_title=result['title'],
+                            song=song,
                         )
+            
 
-                except Exception as e:
-                    error_msg = str(e)
-                    if (
-                        "copyright" in error_msg.lower()
-                        or "blocked" in error_msg.lower()
-                    ):
-                        errors.append(f"Item {idx}: Bloqueado por direitos autorais")
-                    elif "unavailable" in error_msg.lower():
-                        errors.append(f"Item {idx}: Vídeo indisponível")
-                    else:
-                        errors.append(f"Item {idx}: {error_msg[:50]}")
-                    self.logger.warning(f"❌ {idx}/{len(entries)}: {error_msg[:80]}")
 
             # Calcular itens não processados
             fetched_items = len(entries)
@@ -1082,12 +1108,12 @@ class MusicService:
             # Cancelar debounce anterior se existir
             if player.panel_debounce_task and not player.panel_debounce_task.done():
                 player.panel_debounce_task.cancel()
-            
+
             # Criar nova task de debounce
             async def debounced_update():
                 await asyncio.sleep(2.0)  # Aguardar 2 segundos
                 await self.update_control_panel(player, debounce=False)
-            
+
             player.panel_debounce_task = asyncio.create_task(debounced_update())
             return
 
@@ -1333,7 +1359,7 @@ class MusicService:
                 "� Autoplay lock ativo - ignorando chamada duplicada (race condition evitada)"
             )
             return
-        
+
         # Adquirir lock atomicamente
         async with player.autoplay_lock:
             if player.is_fetching_autoplay:  # Double-check após adquirir lock
