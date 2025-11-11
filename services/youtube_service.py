@@ -396,10 +396,12 @@ class YouTubeService:
 
                 loop = asyncio.get_event_loop()
                 response = await loop.run_in_executor(None, request.execute)
-                
+
                 # DEBUG: Verificar resposta da API
                 items = response.get("items", [])
-                self.logger.debug(f"🔍 API retornou {len(items)} items com duração para {len(batch)} IDs solicitados")
+                self.logger.debug(
+                    f"🔍 API retornou {len(items)} items com duração para {len(batch)} IDs solicitados"
+                )
 
                 for item in response.get("items", []):
                     vid_id = item["id"]
@@ -420,7 +422,7 @@ class YouTubeService:
                             total_minutes += 1
 
                         durations[vid_id] = total_minutes
-                        
+
                         # DEBUG: Log de conversão
                         self.logger.debug(
                             f"🔍 Duração parseada: {duration_str} → {hours}h {minutes}m {seconds}s = {total_minutes}min"
@@ -879,62 +881,55 @@ class YouTubeService:
                 # Armazenar candidato para filtro de duração em batch
                 video_candidates.append({"id": vid_id, "item": item})
 
-            # 🆕 OTIMIZAÇÃO #1: PROCESSAR DURAÇÕES EM BATCH (UMA CHAMADA API!)
+            # ⚡ SOLUÇÃO SIMPLES: Buscar duração INDIVIDUALMENTE no loop
+            # (temporário até resolver batch processing)
             self.logger.info(
-                f"📦 Processando {len(video_candidates)} candidatos em batch"
+                f"📦 Processando {len(video_candidates)} candidatos (chamadas individuais)"
             )
 
-            # 📊 LOG AUTOPLAY: Início do batch processing
-            autoplay_logger.log_batch_processing(len(video_candidates))
-
-            # Extrair apenas os IDs
-            candidate_ids = [c["id"] for c in video_candidates]
-
-            # Se não há candidatos, retornar lista vazia
-            if not candidate_ids:
+            if not video_candidates:
                 self.logger.warning("⚠️ Nenhum candidato passou nos filtros iniciais")
                 autoplay_logger.log_filter_summary(
                     0, 0, config.AUTOPLAY_MIN_DURATION, config.AUTOPLAY_MAX_DURATION
                 )
                 return []
 
-            # Buscar durações em batch (98% menos quota!)
-            import time
-
-            start_time = time.time()
-            durations = await self.get_videos_duration_batch(candidate_ids)
-            elapsed = time.time() - start_time
-
-            # Calcular velocidade (evitar divisão por zero)
-            speed = len(candidate_ids) / elapsed if elapsed > 0 else 0
-
-            self.logger.info(
-                f"⚡ Batch API: {len(candidate_ids)} vídeos em {elapsed:.2f}s "
-                f"({speed:.1f} vídeos/s) - Economia: {len(candidate_ids)-1} chamadas API!"
-            )
-            
-            # DEBUG: Verificar durations retornado
-            self.logger.debug(
-                f"🔍 Dicionário durations: {len(durations)} itens retornados de {len(candidate_ids)} solicitados"
-            )
-            if len(durations) == 0:
-                self.logger.warning("⚠️ ATENÇÃO: Dicionário durations está VAZIO!")
-            elif len(durations) < len(candidate_ids):
-                self.logger.warning(
-                    f"⚠️ ATENÇÃO: Faltam {len(candidate_ids) - len(durations)} durações!"
-                )
-
-            # 📊 LOG AUTOPLAY: Resultado batch duration API
-            autoplay_logger.log_batch_duration_api(
-                len(candidate_ids), elapsed, speed, len(candidate_ids) - 1
-            )
-
             # Filtrar por duração e criar lista final
             videos = []
             for candidate in video_candidates:
                 vid_id = candidate["id"]
                 item = candidate["item"]
-                duration_minutes = durations.get(vid_id, 0)
+                
+                # Buscar duração do vídeo individualmente
+                try:
+                    quota_tracker.track_operation("videos_list", f"1 video")
+                    request = self.youtube.videos().list(
+                        part="contentDetails",
+                        id=vid_id
+                    )
+                    loop = asyncio.get_event_loop()
+                    response = await loop.run_in_executor(None, request.execute)
+                    
+                    if response.get("items"):
+                        duration_str = response["items"][0]["contentDetails"]["duration"]
+                        
+                        # Parsear ISO 8601 (PT3M45S)
+                        match = ISO8601_DURATION_PATTERN.match(duration_str)
+                        if match:
+                            hours = int(match.group(1) or 0)
+                            minutes = int(match.group(2) or 0)
+                            seconds = int(match.group(3) or 0)
+                            
+                            duration_minutes = hours * 60 + minutes
+                            if seconds >= 30:
+                                duration_minutes += 1
+                        else:
+                            duration_minutes = 0
+                    else:
+                        duration_minutes = 0
+                except Exception as e:
+                    self.logger.debug(f"Erro ao buscar duração de {vid_id}: {e}")
+                    duration_minutes = 0
 
                 # LOG: Duração do vídeo
                 self.logger.debug(
