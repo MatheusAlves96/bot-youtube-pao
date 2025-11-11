@@ -718,7 +718,7 @@ class MusicService:
                 self.logger.debug(f"✅ Cache hit no pré-carregamento: {video_id}")
             else:
                 self._cache_misses += 1
-                # Extrair informações do vídeo com timeout de 30s
+                # Extrair informações do vídeo com timeout de 10s
                 loop = asyncio.get_event_loop()
                 try:
                     info = await asyncio.wait_for(
@@ -728,11 +728,11 @@ class MusicService:
                                 next_song.url, download=False
                             ),
                         ),
-                        timeout=30.0,  # 30 segundos de timeout
+                        timeout=10.0,  # 10 segundos de timeout (reduzido de 30s)
                     )
                 except asyncio.TimeoutError:
                     self.logger.warning(
-                        f"⏱️ Timeout ao pré-carregar música: {next_song.title}"
+                        f"⏱️ Timeout ao pré-carregar música: {next_song.title} (carregará sob demanda)"
                     )
                     return
 
