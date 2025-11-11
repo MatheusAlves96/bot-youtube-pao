@@ -7,7 +7,7 @@ import asyncio
 import discord
 import yt_dlp
 from typing import Optional, List, Dict, Any
-from collections import deque
+from collections import deque, OrderedDict
 from datetime import datetime
 
 from core.logger import LoggerFactory
@@ -26,9 +26,10 @@ class Song:
         self.stream_url = data.get("stream_url", "")
         self.requester = requester
         self.requested_at = datetime.now()
-        
+
         # TTL para stream URL (URLs do YouTube expiram em ~6h, usar 5h de segurança)
         import time
+
         self.stream_url_expires = time.time() + (5 * 3600)  # 5 horas
 
     def __str__(self):
@@ -271,7 +272,7 @@ class MusicPlayer:
         embed = discord.Embed(
             title="🎛️ Painel de Controle - Music Bot",
             color=discord.Color.blue() if self.is_playing else discord.Color.greyple(),
-            timestamp=datetime.now()
+            timestamp=datetime.now(),
         )
 
         # 🎵 Música Atual
@@ -279,6 +280,7 @@ class MusicPlayer:
             elapsed = 0
             if self.song_start_time and not self.is_paused:
                 import time
+
                 elapsed = int(time.time() - self.song_start_time)
                 elapsed = min(elapsed, self.current_song.duration)
 
@@ -299,7 +301,9 @@ class MusicPlayer:
             if self.current_song.thumbnail:
                 embed.set_thumbnail(url=self.current_song.thumbnail)
         else:
-            embed.add_field(name="🎵 Tocando Agora", value="*Nenhuma música tocando*", inline=False)
+            embed.add_field(
+                name="🎵 Tocando Agora", value="*Nenhuma música tocando*", inline=False
+            )
 
         # 📋 Fila
         if self.queue:
@@ -311,12 +315,20 @@ class MusicPlayer:
             if len(self.queue) > 5:
                 queue_text += f"\n*...e mais {len(self.queue) - 5} música(s)*"
 
-            embed.add_field(name=f"📋 Fila ({len(self.queue)} música(s))", value=queue_text, inline=False)
+            embed.add_field(
+                name=f"📋 Fila ({len(self.queue)} música(s))",
+                value=queue_text,
+                inline=False,
+            )
         else:
             embed.add_field(name="📋 Fila", value="*Fila vazia*", inline=False)
 
         # ⚙️ Configurações
-        loop_status = "🔁 Ativado" if self.loop_mode == "single" else "🔁🔁 Fila" if self.loop_mode == "queue" else "❌ Desativado"
+        loop_status = (
+            "🔁 Ativado"
+            if self.loop_mode == "single"
+            else "🔁🔁 Fila" if self.loop_mode == "queue" else "❌ Desativado"
+        )
         autoplay_status = "✅ Ativado" if self.autoplay_enabled else "❌ Desativado"
         volume_bars = int(self.volume * 10)
         volume_display = "🔊" + "█" * volume_bars + "░" * (10 - volume_bars)
@@ -333,7 +345,9 @@ class MusicPlayer:
             "⏯️ Play/Pause | ⏭️ Pular | ⏹️ Parar\n"
             "🔊 Vol+ | 🔉 Vol- | 🔁 Loop | 🎲 Autoplay"
         )
-        embed.add_field(name="🎮 Controles (Reações)", value=controls_text, inline=False)
+        embed.add_field(
+            name="🎮 Controles (Reações)", value=controls_text, inline=False
+        )
 
         embed.set_footer(text="Use as reações para controlar o bot")
 
@@ -362,9 +376,11 @@ class MusicService:
         self.logger = LoggerFactory.create_logger(__name__)
         self.players: Dict[int, MusicPlayer] = {}
 
-        # 🚀 Cache simples para informações de vídeos (evita reprocessamento)
-        self._video_info_cache: Dict[str, Dict] = {}
+        # 🚀 Cache LRU para informações de vídeos (evita reprocessamento)
+        self._video_info_cache: OrderedDict[str, Dict] = OrderedDict()
         self._cache_max_size = 100
+        self._cache_hits = 0
+        self._cache_misses = 0
 
         # Configurar yt-dlp para músicas individuais
         self.ytdl = yt_dlp.YoutubeDL(config.get_ytdl_options())
@@ -693,36 +709,47 @@ class MusicService:
             # Extrair video_id
             video_id = self._extract_video_id(next_song.url)
 
-            # Verificar cache primeiro
+            # Verificar cache primeiro (LRU)
             if video_id and video_id in self._video_info_cache:
-                info = self._video_info_cache[video_id]
+                # Move para o final (marca como recentemente usado)
+                info = self._video_info_cache.pop(video_id)
+                self._video_info_cache[video_id] = info
+                self._cache_hits += 1
                 self.logger.debug(f"✅ Cache hit no pré-carregamento: {video_id}")
             else:
+                self._cache_misses += 1
                 # Extrair informações do vídeo com timeout de 30s
                 loop = asyncio.get_event_loop()
                 try:
                     info = await asyncio.wait_for(
                         loop.run_in_executor(
-                            None, lambda: self.ytdl.extract_info(next_song.url, download=False)
+                            None,
+                            lambda: self.ytdl.extract_info(
+                                next_song.url, download=False
+                            ),
                         ),
-                        timeout=30.0  # 30 segundos de timeout
+                        timeout=30.0,  # 30 segundos de timeout
                     )
                 except asyncio.TimeoutError:
-                    self.logger.warning(f"⏱️ Timeout ao pré-carregar música: {next_song.title}")
+                    self.logger.warning(
+                        f"⏱️ Timeout ao pré-carregar música: {next_song.title}"
+                    )
                     return
 
-                # Adicionar ao cache
+                # Adicionar ao cache (LRU - remove mais antigo se cheio)
                 if video_id and info:
                     if len(self._video_info_cache) >= self._cache_max_size:
-                        first_key = next(iter(self._video_info_cache))
-                        del self._video_info_cache[first_key]
+                        # Remove primeiro item (mais antigo)
+                        self._video_info_cache.popitem(last=False)
                     self._video_info_cache[video_id] = info
 
             # Atualizar stream_url da próxima música
             if info:
                 next_song.stream_url = info.get("url", next_song.stream_url)
                 player.preloaded_song = next_song
-                self.logger.info(f"✅ Música pré-carregada com sucesso: {next_song.title}")
+                self.logger.info(
+                    f"✅ Música pré-carregada com sucesso: {next_song.title}"
+                )
 
         except asyncio.CancelledError:
             self.logger.debug("🚫 Pré-carregamento cancelado")
@@ -734,30 +761,30 @@ class MusicService:
     async def _ensure_valid_stream_url(self, song: Song):
         """
         Garante que a URL do stream é válida e não expirou
-        
+
         Args:
             song: Música a validar
         """
         import time
-        
+
         # Verificar se a URL expirou
         if time.time() > song.stream_url_expires:
             self.logger.info(f"🔄 Stream URL expirada, re-extraindo: {song.title}")
-            
+
             try:
                 # Re-extrair informações do vídeo
                 loop = asyncio.get_event_loop()
                 data = await loop.run_in_executor(
                     None, lambda: self.ytdl.extract_info(song.url, download=False)
                 )
-                
+
                 if data:
                     # Atualizar stream URL
                     song.stream_url = data.get("url", song.stream_url)
                     # Renovar TTL
                     song.stream_url_expires = time.time() + (5 * 3600)
                     self.logger.info(f"✅ Stream URL renovada: {song.title}")
-                    
+
             except Exception as e:
                 self.logger.error(f"❌ Erro ao renovar stream URL: {e}")
                 # Manter URL antiga e tentar tocar mesmo assim
@@ -780,6 +807,7 @@ class MusicService:
 
         # 🎛️ Definir timestamp do início da música para tracking de progresso
         import time
+
         player.song_start_time = time.time()
 
         # 🎛️ Iniciar/atualizar painel de controle
@@ -815,7 +843,9 @@ class MusicService:
                     player.last_video_title = player.current_song.title
                     player.last_video_channel = player.current_song.uploader
                     player.autoplay_history.append(video_id)
-                    self.logger.debug(f"📝 Música adicionada ao histórico: {player.current_song.title} | Histórico: {len(player.autoplay_history)} vídeos")
+                    self.logger.debug(
+                        f"📝 Música adicionada ao histórico: {player.current_song.title} | Histórico: {len(player.autoplay_history)} vídeos"
+                    )
 
                 # Salvar último requester válido
                 if player.current_song.requester:
@@ -836,7 +866,9 @@ class MusicService:
 
             # 🛡️ PROTEÇÃO: Prevenir múltiplas chamadas simultâneas
             if player.is_playing:
-                self.logger.warning("⚠️ Tentativa de tocar música enquanto outra já está tocando - ignorando")
+                self.logger.warning(
+                    "⚠️ Tentativa de tocar música enquanto outra já está tocando - ignorando"
+                )
                 return
 
             # Tocar próxima música da fila
@@ -849,7 +881,9 @@ class MusicService:
                     and player.preloaded_song.url == next_song.url
                     and player.preloaded_song.stream_url
                 ):
-                    self.logger.info(f"⚡ Usando stream pré-carregado para: {next_song.title}")
+                    self.logger.info(
+                        f"⚡ Usando stream pré-carregado para: {next_song.title}"
+                    )
                     next_song.stream_url = player.preloaded_song.stream_url
                     player.preloaded_song = None  # Limpar cache
 
@@ -906,7 +940,9 @@ class MusicService:
         if player.queue and len(player.queue) > 0:
             # Iniciar novo pré-carregamento em background (proteção está dentro do método)
             try:
-                player.preload_task = asyncio.create_task(self._preload_next_song(player))
+                player.preload_task = asyncio.create_task(
+                    self._preload_next_song(player)
+                )
                 self.logger.debug("🚀 Pré-carregamento da próxima música iniciado")
             except Exception as e:
                 self.logger.warning(f"⚠️ Erro ao iniciar pré-carregamento: {e}")
@@ -949,7 +985,11 @@ class MusicService:
         """
         try:
             # Formatar duração
-            duration_str = f"{song.duration // 60}:{song.duration % 60:02d}" if song.duration else "N/A"
+            duration_str = (
+                f"{song.duration // 60}:{song.duration % 60:02d}"
+                if song.duration
+                else "N/A"
+            )
 
             embed = discord.Embed(
                 title="🎵 Autoplay adicionou",
@@ -1006,7 +1046,9 @@ class MusicService:
 
             # Se não existe, criar novo painel
             if not player.control_panel_message:
-                player.control_panel_message = await player.text_channel.send(embed=embed)
+                player.control_panel_message = await player.text_channel.send(
+                    embed=embed
+                )
 
                 # Adicionar reações de controle
                 control_reactions = ["⏯️", "⏭️", "⏹️", "🔊", "🔉", "🔁", "🎲"]
@@ -1026,6 +1068,7 @@ class MusicService:
         Args:
             player: Player do servidor
         """
+
         async def update_loop():
             try:
                 while player.is_playing or player.is_paused or len(player.queue) > 0:
@@ -1059,7 +1102,7 @@ class MusicService:
         player: MusicPlayer,
         voice_client: discord.VoiceClient,
         reaction: discord.Reaction,
-        user: discord.User
+        user: discord.User,
     ):
         """
         Processa reação no painel de controle
@@ -1138,14 +1181,37 @@ class MusicService:
             if action_processed:
                 try:
                     await reaction.remove(user)
-                    self.logger.debug(f"🧹 Reação {emoji} removida do usuário {user.name}")
+                    self.logger.debug(
+                        f"🧹 Reação {emoji} removida do usuário {user.name}"
+                    )
                 except discord.Forbidden:
-                    self.logger.warning("⚠️ Sem permissão para remover reações. Adicione a permissão 'Manage Messages' ao bot.")
+                    self.logger.warning(
+                        "⚠️ Sem permissão para remover reações. Adicione a permissão 'Manage Messages' ao bot."
+                    )
                 except discord.NotFound:
                     # Mensagem ou reação já foi deletada
                     pass
                 except discord.HTTPException as e:
                     self.logger.debug(f"Erro HTTP ao remover reação: {e}")
+
+    def get_cache_stats(self) -> Dict[str, Any]:
+        """
+        Retorna estatísticas do cache LRU
+        
+        Returns:
+            Dicionário com estatísticas do cache
+        """
+        total_requests = self._cache_hits + self._cache_misses
+        hit_rate = (self._cache_hits / total_requests * 100) if total_requests > 0 else 0
+        
+        return {
+            "size": len(self._video_info_cache),
+            "max_size": self._cache_max_size,
+            "hits": self._cache_hits,
+            "misses": self._cache_misses,
+            "total_requests": total_requests,
+            "hit_rate": hit_rate,
+        }
 
     def _extract_video_id(self, url: str) -> Optional[str]:
         """
@@ -1193,11 +1259,15 @@ class MusicService:
             reference_channel: Canal de referência (override last_video_channel)
         """
         if player.is_fetching_autoplay:
-            self.logger.debug("🚫 Autoplay já está buscando músicas - ignorando chamada duplicada")
+            self.logger.debug(
+                "🚫 Autoplay já está buscando músicas - ignorando chamada duplicada"
+            )
             return
 
         player.is_fetching_autoplay = True
-        self.logger.debug(f"🔍 Autoplay iniciado - Modo: {'proativo' if proactive else 'reativo'}, Fila atual: {len(player.queue)}")
+        self.logger.debug(
+            f"🔍 Autoplay iniciado - Modo: {'proativo' if proactive else 'reativo'}, Fila atual: {len(player.queue)}"
+        )
 
         try:
             # Importar YouTubeService aqui para evitar importação circular
@@ -1267,7 +1337,7 @@ class MusicService:
                         proactive,
                         reference_video_id,
                         reference_title,
-                        reference_channel
+                        reference_channel,
                     )
                     return
 
@@ -1308,21 +1378,25 @@ class MusicService:
                     video_url = video["url"]
                     video_id = self._extract_video_id(video_url)
 
-                    # 🚀 Verificar cache primeiro
+                    # 🚀 Verificar cache primeiro (LRU)
                     if video_id and video_id in self._video_info_cache:
+                        # Move para o final (marca como recentemente usado)
+                        info = self._video_info_cache.pop(video_id)
+                        self._video_info_cache[video_id] = info
+                        self._cache_hits += 1
                         self.logger.debug(f"✅ Cache hit para: {video_id}")
-                        info = self._video_info_cache[video_id]
                     else:
+                        self._cache_misses += 1
                         info = await asyncio.get_event_loop().run_in_executor(
-                            None, lambda url=video_url: ydl.extract_info(url, download=False)
+                            None,
+                            lambda url=video_url: ydl.extract_info(url, download=False),
                         )
 
-                        # Adicionar ao cache (com limite de tamanho)
+                        # Adicionar ao cache (LRU - remove mais antigo)
                         if video_id and info:
                             if len(self._video_info_cache) >= self._cache_max_size:
-                                # Remover item mais antigo (FIFO simples)
-                                first_key = next(iter(self._video_info_cache))
-                                del self._video_info_cache[first_key]
+                                # Remove primeiro item (mais antigo)
+                                self._video_info_cache.popitem(last=False)
                             self._video_info_cache[video_id] = info
                             self.logger.debug(f"💾 Cached: {video_id}")
 
@@ -1332,9 +1406,7 @@ class MusicService:
                                 "url": video["url"],
                                 "title": info.get("title", video["title"]),
                                 "duration": info.get("duration", 0),
-                                "thumbnail": info.get(
-                                    "thumbnail", video["thumbnail"]
-                                ),
+                                "thumbnail": info.get("thumbnail", video["thumbnail"]),
                                 "uploader": info.get("uploader", video["channel"]),
                                 "stream_url": info.get("url", ""),
                             },
@@ -1350,11 +1422,18 @@ class MusicService:
                 except Exception as e:
                     error_msg = str(e)
                     # 🔞 Vídeos com restrição de idade - log silencioso
-                    if "Sign in to confirm your age" in error_msg or "age" in error_msg.lower():
-                        self.logger.debug(f"🔞 Vídeo com restrição de idade ignorado: {video.get('title', 'unknown')}")
+                    if (
+                        "Sign in to confirm your age" in error_msg
+                        or "age" in error_msg.lower()
+                    ):
+                        self.logger.debug(
+                            f"🔞 Vídeo com restrição de idade ignorado: {video.get('title', 'unknown')}"
+                        )
                     # ❌ Outros erros - log normal
                     else:
-                        self.logger.warning(f"⚠️ Erro ao processar vídeo {video.get('title', 'unknown')}: {error_msg[:100]}")
+                        self.logger.warning(
+                            f"⚠️ Erro ao processar vídeo {video.get('title', 'unknown')}: {error_msg[:100]}"
+                        )
                     return None
 
             # 🚀 Processar todos os vídeos em PARALELO
@@ -1366,7 +1445,9 @@ class MusicService:
                 if song and isinstance(song, Song):
                     player.add_song(song)
                     added_songs.append(song)
-                    self.logger.debug(f"✅ Música adicionada à fila: {song.title} | Total na fila: {len(player.queue)}")
+                    self.logger.debug(
+                        f"✅ Música adicionada à fila: {song.title} | Total na fila: {len(player.queue)}"
+                    )
 
                     # � OTIMIZAÇÃO: Enviar mensagem em background (não bloqueia)
                     if not proactive and player.text_channel:
@@ -1393,11 +1474,15 @@ class MusicService:
                 # 🛡️ CORREÇÃO: Só iniciar música se foi chamada REATIVAMENTE (não proativo)
                 # E se realmente não tem nada tocando
                 if not proactive and not player.is_playing and player.queue:
-                    self.logger.info(f"▶️ Autoplay reativo: Iniciando primeira música da fila (Total: {len(player.queue)})")
+                    self.logger.info(
+                        f"▶️ Autoplay reativo: Iniciando primeira música da fila (Total: {len(player.queue)})"
+                    )
                     next_song = player.queue.popleft()
                     await self.play_song(player, voice_client, next_song)
                 elif proactive:
-                    self.logger.debug(f"🎵 Autoplay proativo concluído - {len(player.queue)} músicas na fila (sem auto-start)")
+                    self.logger.debug(
+                        f"🎵 Autoplay proativo concluído - {len(player.queue)} músicas na fila (sem auto-start)"
+                    )
 
         except Exception as e:
             self.logger.error(f"❌ Erro no autoplay: {e}")
@@ -1408,28 +1493,28 @@ class MusicService:
     async def cleanup_inactive_players(self):
         """Remove players inativos a cada 1 hora para prevenir memory leak"""
         import time
-        
+
         while True:
             try:
                 await asyncio.sleep(3600)  # 1 hora
-                
+
                 to_remove = []
                 current_time = time.time()
-                
+
                 for guild_id, player in self.players.items():
                     # Verificar se player está inativo
                     if not player.is_playing and not player.queue:
                         # Adicionar timestamp de última atividade se não existir
-                        if not hasattr(player, '_last_activity'):
+                        if not hasattr(player, "_last_activity"):
                             player._last_activity = current_time
-                        
+
                         # Se inativo há mais de 30 minutos, marcar para remoção
                         if current_time - player._last_activity > 1800:  # 30 min
                             to_remove.append(guild_id)
                     else:
                         # Player ativo, atualizar timestamp
                         player._last_activity = current_time
-                
+
                 # Remover players inativos
                 for guild_id in to_remove:
                     player = self.players.get(guild_id)
@@ -1438,13 +1523,17 @@ class MusicService:
                             await player.voice_client.disconnect()
                         except Exception as e:
                             self.logger.debug(f"Erro ao desconectar voice client: {e}")
-                    
+
                     del self.players[guild_id]
-                    self.logger.info(f"🧹 Player removido por inatividade: guild_id={guild_id}")
-                
+                    self.logger.info(
+                        f"🧹 Player removido por inatividade: guild_id={guild_id}"
+                    )
+
                 if to_remove:
-                    self.logger.info(f"🧹 Cleanup concluído: {len(to_remove)} player(s) removido(s)")
-                    
+                    self.logger.info(
+                        f"🧹 Cleanup concluído: {len(to_remove)} player(s) removido(s)"
+                    )
+
             except asyncio.CancelledError:
                 self.logger.info("🛑 Task de cleanup cancelada")
                 break
