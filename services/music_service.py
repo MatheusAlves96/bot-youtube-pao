@@ -104,6 +104,7 @@ class MusicPlayer:
         # 🎛️ Control Panel - Painel visual interativo
         self.control_panel_message: Optional[discord.Message] = None
         self.panel_update_task: Optional[asyncio.Task] = None
+        self.panel_debounce_task: Optional[asyncio.Task] = None  # Task de debounce (2s)
         self.song_start_time: Optional[float] = None  # Timestamp do início da música
 
         # 🚀 Pré-carregamento - Reduz latência entre músicas
@@ -503,7 +504,7 @@ class MusicService:
             # Resetar flag de cancelamento (caso tenha ficado de operação anterior)
             if player:
                 player.cancel_playlist_processing = False
-            
+
             # Calcular limite para não baixar páginas desnecessárias
             max_items = config.MAX_QUEUE_SIZE + 10
 
@@ -1024,13 +1025,27 @@ class MusicService:
         except Exception as e:
             self.logger.debug(f"Erro ao enviar notificação de autoplay: {e}")
 
-    async def update_control_panel(self, player: MusicPlayer):
+    async def update_control_panel(self, player: MusicPlayer, debounce: bool = True):
         """
-        Atualiza ou cria o painel de controle
+        Atualiza ou cria o painel de controle com debounce opcional
 
         Args:
             player: Player do servidor
+            debounce: Se True, aguarda 2s antes de atualizar (evita spam)
         """
+        if debounce:
+            # Cancelar debounce anterior se existir
+            if player.panel_debounce_task and not player.panel_debounce_task.done():
+                player.panel_debounce_task.cancel()
+            
+            # Criar nova task de debounce
+            async def debounced_update():
+                await asyncio.sleep(2.0)  # Aguardar 2 segundos
+                await self.update_control_panel(player, debounce=False)
+            
+            player.panel_debounce_task = asyncio.create_task(debounced_update())
+            return
+
         try:
             if not player.text_channel:
                 return
@@ -1062,6 +1077,9 @@ class MusicService:
                     except discord.HTTPException:
                         pass
 
+        except asyncio.CancelledError:
+            # Esperado quando debounce é cancelado
+            pass
         except Exception as e:
             self.logger.error(f"Erro ao atualizar painel de controle: {e}")
 
