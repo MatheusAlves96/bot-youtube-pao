@@ -169,6 +169,9 @@ class MusicBot:
                     await asyncio.wait_for(self.bot.close(), timeout=2.0)
                 except (asyncio.TimeoutError, RuntimeError, asyncio.CancelledError):
                     pass
+            
+            # 3️⃣ Aguardar 250ms para conexões HTTP finalizarem
+            await asyncio.sleep(0.25)
 
             self.logger.info("✅ Bot encerrado")
 
