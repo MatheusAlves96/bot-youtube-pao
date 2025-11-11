@@ -137,7 +137,9 @@ async def test_batch_api():
         print("=" * 80)
         print(f"   Solicitados: {len(test_video_ids)} vídeos")
         print(f"   Retornados: {len(durations)} vídeos")
-        print(f"   Com duração válida (>0): {sum(1 for d in durations.values() if d > 0)}")
+        print(
+            f"   Com duração válida (>0): {sum(1 for d in durations.values() if d > 0)}"
+        )
         print(f"   Com duração 0: {sum(1 for d in durations.values() if d == 0)}")
 
         if all(d > 0 for d in durations.values()):

@@ -402,7 +402,7 @@ class YouTubeService:
                 self.logger.info(
                     f"🔍 BATCH DEBUG: API retornou {len(items)} items para {len(batch)} IDs | IDs solicitados: {ids_str[:100]}..."
                 )
-                
+
                 if items:
                     # Mostrar primeiro resultado para validar formato
                     first = items[0]
@@ -903,7 +903,10 @@ class YouTubeService:
                 return []
 
             # Buscar durações em batch (UMA chamada para todos!)
+            import time
+            batch_start = time.time()
             durations = await self.get_videos_duration_batch(candidate_ids)
+            batch_elapsed = time.time() - batch_start
 
             # DEBUG: Verificar se o dicionário está populado
             if not durations:
@@ -914,7 +917,10 @@ class YouTubeService:
                     f"⚠️ ATENÇÃO: Faltam {missing} durações no dicionário (esperado: {len(candidate_ids)}, recebido: {len(durations)})"
                 )
 
-            autoplay_logger.log_batch_duration_api(len(durations), len(candidate_ids))
+            # Calcular métricas do batch
+            speed = len(durations) / batch_elapsed if batch_elapsed > 0 else 0
+            quota_saved = len(candidate_ids) - 1  # Batch usa 1 chamada vs N individuais
+            autoplay_logger.log_batch_duration_api(len(durations), batch_elapsed, speed, quota_saved)
 
             # Filtrar por duração e criar lista final
             videos = []
