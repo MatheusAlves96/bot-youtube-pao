@@ -836,13 +836,12 @@ class YouTubeService:
                 #     ...continue
 
                 # LOG: Vídeo passou nos filtros iniciais
-                self.logger.debug(f"   ✅ Passou nos filtros iniciais (aguardando filtro de duração)")
+                self.logger.debug(
+                    f"   ✅ Passou nos filtros iniciais (aguardando filtro de duração)"
+                )
 
                 # Armazenar candidato para filtro de duração em batch
-                video_candidates.append({
-                    "id": vid_id,
-                    "item": item
-                })
+                video_candidates.append({"id": vid_id, "item": item})
 
             # 🆕 OTIMIZAÇÃO #1: PROCESSAR DURAÇÕES EM BATCH (UMA CHAMADA API!)
             self.logger.info(
@@ -854,6 +853,7 @@ class YouTubeService:
 
             # Buscar durações em batch (98% menos quota!)
             import time
+
             start_time = time.time()
             durations = await self.get_videos_duration_batch(candidate_ids)
             elapsed = time.time() - start_time

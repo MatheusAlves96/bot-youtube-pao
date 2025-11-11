@@ -149,7 +149,7 @@ class MusicPlayer:
 
         self.logger = LoggerFactory.create_logger(__name__)
 
-    def add_song(self, song: Song):
+    def add_song(self, song: Song) -> None:
         """Adiciona uma música à fila"""
         if len(self.queue) >= config.MAX_QUEUE_SIZE:
             raise ValueError(f"Fila cheia! Máximo: {config.MAX_QUEUE_SIZE}")
@@ -161,7 +161,7 @@ class MusicPlayer:
         """Retorna a fila atual"""
         return list(self.queue)
 
-    def clear_queue(self):
+    def clear_queue(self) -> None:
         """Limpa a fila e para autoplay temporariamente"""
         self.queue.clear()
         self.cancel_playlist_processing = True  # Cancelar processamento de playlist
@@ -180,7 +180,7 @@ class MusicPlayer:
 
         self.logger.info("Fila limpa e processamento cancelado")
 
-    def shuffle(self):
+    def shuffle(self) -> None:
         """Embaralha a fila"""
         import random
 
@@ -220,46 +220,78 @@ class MusicPlayer:
 
     async def fade_out(self, duration: float):
         """
-        Reduz o volume gradualmente (fade out)
+        Reduz o volume gradualmente (fade out) com transição suave
 
         Args:
             duration: Duração do fade em segundos
+
+        Melhorias (Otimização #17):
+            - 50 steps para transição imperceptível (antes: 20)
+            - Cancelamento suave sem "click"
+            - Curva de volume não-linear para naturalidade
         """
         if not self.voice_client or not self.voice_client.source:
             return
 
         original_volume = self.volume
-        steps = 20  # Número de passos do fade
+        steps = 50  # 🆕 AUMENTADO (2.5x mais steps)
         step_duration = duration / steps
-        volume_step = original_volume / steps
 
         try:
             for i in range(steps):
+                # Verificar se ainda está tocando
                 if not self.voice_client or not self.voice_client.is_playing():
+                    # Cancelado - fade out suave para evitar click
+                    if self.voice_client and self.voice_client.source:
+                        # Volume atual → 0 em 50ms (suave, não abrupto)
+                        current_volume = self.voice_client.source.volume
+                        for j in range(5):
+                            self.voice_client.source.volume = current_volume * (1 - j/5)
+                            await asyncio.sleep(0.01)  # 10ms x 5 = 50ms
+                        self.voice_client.source.volume = 0.0
                     break
 
-                new_volume = original_volume - (volume_step * (i + 1))
+                # 🆕 CURVA NÃO-LINEAR (mais natural)
+                # Reduz mais rápido no início, mais devagar no final
+                progress = (i + 1) / steps
+                # Curva quadrática: y = x²
+                curve_factor = progress ** 2
+                new_volume = original_volume * (1 - curve_factor)
                 new_volume = max(0.0, new_volume)
+
                 self.voice_client.source.volume = new_volume
 
                 await asyncio.sleep(step_duration)
+
+        except asyncio.CancelledError:
+            # Fade cancelado - mute suave
+            if self.voice_client and self.voice_client.source:
+                current_volume = self.voice_client.source.volume
+                for j in range(5):
+                    self.voice_client.source.volume = current_volume * (1 - j/5)
+                    await asyncio.sleep(0.01)
+                self.voice_client.source.volume = 0.0
+            raise
         except Exception as e:
             self.logger.debug(f"Fade out interrompido: {e}")
 
     async def fade_in(self, duration: float):
         """
-        Aumenta o volume gradualmente (fade in)
+        Aumenta o volume gradualmente (fade in) com transição suave
 
         Args:
             duration: Duração do fade em segundos
+
+        Melhorias (Otimização #17):
+            - 50 steps para transição imperceptível (antes: 20)
+            - Curva não-linear inversa do fade out
         """
         if not self.voice_client or not self.voice_client.source:
             return
 
         target_volume = self.volume
-        steps = 20  # Número de passos do fade
+        steps = 50  # 🆕 AUMENTADO (2.5x mais steps)
         step_duration = duration / steps
-        volume_step = target_volume / steps
 
         # Começar do silêncio
         self.voice_client.source.volume = 0.0
@@ -269,15 +301,26 @@ class MusicPlayer:
                 if not self.voice_client or not self.voice_client.is_playing():
                     break
 
-                new_volume = volume_step * (i + 1)
+                # 🆕 CURVA NÃO-LINEAR (inversa do fade out)
+                progress = (i + 1) / steps
+                # Curva raiz quadrada: y = √x (aumenta rápido no início)
+                curve_factor = progress ** 0.5
+                new_volume = target_volume * curve_factor
                 new_volume = min(target_volume, new_volume)
+
                 self.voice_client.source.volume = new_volume
 
                 await asyncio.sleep(step_duration)
+
+        except asyncio.CancelledError:
+            # Fade cancelado - definir volume final
+            if self.voice_client and self.voice_client.source:
+                self.voice_client.source.volume = target_volume
+            raise
         except Exception as e:
             self.logger.debug(f"Fade in interrompido: {e}")
 
-    def set_volume(self, volume: float):
+    def set_volume(self, volume: float) -> None:
         """Define o volume (0.0 a 1.0)"""
         self.volume = max(0.0, min(1.0, volume))
         if self.voice_client and self.voice_client.source:

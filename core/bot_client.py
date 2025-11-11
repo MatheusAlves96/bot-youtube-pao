@@ -150,6 +150,7 @@ class MusicBot:
         try:
             # 0️⃣ Salvar quota antes de encerrar
             from utils.quota_tracker import quota_tracker
+
             quota_tracker.force_save()
 
             # 1️⃣ Desconectar voice clients

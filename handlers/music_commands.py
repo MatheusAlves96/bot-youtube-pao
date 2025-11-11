@@ -178,7 +178,7 @@ class MusicCommands(commands.Cog):
                 if not voice_channel:
                     await ctx.send("❌ Você precisa estar em um canal de voz!")
                     return
-                
+
                 await voice_channel.connect()
                 self.logger.info(f"Conectado ao canal: {voice_channel.name}")
             except Exception as e:
@@ -1074,11 +1074,7 @@ class MusicCommands(commands.Cog):
             color=(
                 discord.Color.green()
                 if hit_rate >= 70
-                else (
-                    discord.Color.orange()
-                    if hit_rate >= 50
-                    else discord.Color.red()
-                )
+                else (discord.Color.orange() if hit_rate >= 50 else discord.Color.red())
             ),
         )
 

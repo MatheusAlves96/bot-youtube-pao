@@ -201,9 +201,9 @@ class QuotaTracker:
         time_since_save = (datetime.now() - self._last_save_time).total_seconds()
 
         should_save = (
-            self._save_counter >= self._save_interval or  # A cada N ops
-            time_since_save > 300 or  # Ou a cada 5 minutos (segurança)
-            self._is_critical_threshold()  # Ou se chegou perto do limite
+            self._save_counter >= self._save_interval  # A cada N ops
+            or time_since_save > 300  # Ou a cada 5 minutos (segurança)
+            or self._is_critical_threshold()  # Ou se chegou perto do limite
         )
 
         if should_save and self._dirty:

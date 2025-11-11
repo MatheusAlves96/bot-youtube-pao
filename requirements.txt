@@ -26,3 +26,9 @@ colorlog>=6.8.0
 
 # Process Management
 psutil>=5.9.0
+
+# Development Tools
+mypy>=1.7.0
+
+# Groq API (IA Autoplay)
+groq>=0.4.0
