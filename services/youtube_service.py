@@ -401,20 +401,24 @@ class YouTubeService:
                     vid_id = item["id"]
                     duration_str = item["contentDetails"]["duration"]
 
-                    # Parsear duração ISO 8601
-                    hours = 0
-                    minutes = 0
+                    # Parsear duração ISO 8601 completa (PT1H2M3S)
+                    match = ISO8601_DURATION_PATTERN.match(duration_str)
 
-                    hours_match = DURATION_HOURS_PATTERN.search(duration_str)
-                    minutes_match = DURATION_MINUTES_PATTERN.search(duration_str)
+                    if match:
+                        hours = int(match.group(1) or 0)
+                        minutes = int(match.group(2) or 0)
+                        seconds = int(match.group(3) or 0)
 
-                    if hours_match:
-                        hours = int(hours_match.group(1))
-                    if minutes_match:
-                        minutes = int(minutes_match.group(1))
+                        # Converter para minutos com arredondamento correto
+                        # Se tem >= 30 segundos, arredondar para cima
+                        total_minutes = hours * 60 + minutes
+                        if seconds >= 30:
+                            total_minutes += 1
 
-                    total_minutes = hours * 60 + minutes
-                    durations[vid_id] = total_minutes
+                        durations[vid_id] = total_minutes
+                    else:
+                        # Fallback: assumir 0 se não conseguir parsear
+                        durations[vid_id] = 0
 
             except Exception as e:
                 self.logger.debug(f"Erro ao buscar batch de durações: {e}")
@@ -484,13 +488,22 @@ class YouTubeService:
             self.logger.debug(
                 f"   Tipo: {query_type} | Gênero: {detected_genre} | Internacional: {is_international}"
             )
-            
+
             # 📊 LOG AUTOPLAY: Estratégia de busca
-            strategy_sources = ["IA Groq", "IA variação", "IA aleatório", "IA brasileiro"]
+            strategy_sources = [
+                "IA Groq",
+                "IA variação",
+                "IA aleatório",
+                "IA brasileiro",
+            ]
             autoplay_logger.log_search_strategy(
                 strategy=search_strategy,
                 query=search_query,
-                source=strategy_sources[search_strategy] if search_strategy < len(strategy_sources) else "Desconhecido"
+                source=(
+                    strategy_sources[search_strategy]
+                    if search_strategy < len(strategy_sources)
+                    else "Desconhecido"
+                ),
             )
 
             # Executar busca no YouTube com a query gerada pela IA
@@ -506,7 +519,7 @@ class YouTubeService:
             # LOG: Quantos resultados a API retornou
             total_results = len(response.get("items", []))
             self.logger.info(f"📊 API retornou {total_results} resultados da busca")
-            
+
             # 📊 LOG AUTOPLAY: Resultado da API search
             autoplay_logger.log_api_search(total_results, quota_used=100)
 
@@ -858,7 +871,7 @@ class YouTubeService:
             self.logger.info(
                 f"📦 Processando {len(video_candidates)} candidatos em batch"
             )
-            
+
             # 📊 LOG AUTOPLAY: Início do batch processing
             autoplay_logger.log_batch_processing(len(video_candidates))
 
@@ -868,7 +881,9 @@ class YouTubeService:
             # Se não há candidatos, retornar lista vazia
             if not candidate_ids:
                 self.logger.warning("⚠️ Nenhum candidato passou nos filtros iniciais")
-                autoplay_logger.log_filter_summary(0, 0, config.AUTOPLAY_MIN_DURATION, config.AUTOPLAY_MAX_DURATION)
+                autoplay_logger.log_filter_summary(
+                    0, 0, config.AUTOPLAY_MIN_DURATION, config.AUTOPLAY_MAX_DURATION
+                )
                 return []
 
             # Buscar durações em batch (98% menos quota!)
@@ -885,13 +900,10 @@ class YouTubeService:
                 f"⚡ Batch API: {len(candidate_ids)} vídeos em {elapsed:.2f}s "
                 f"({speed:.1f} vídeos/s) - Economia: {len(candidate_ids)-1} chamadas API!"
             )
-            
+
             # 📊 LOG AUTOPLAY: Resultado batch duration API
             autoplay_logger.log_batch_duration_api(
-                len(candidate_ids),
-                elapsed,
-                speed,
-                len(candidate_ids) - 1
+                len(candidate_ids), elapsed, speed, len(candidate_ids) - 1
             )
 
             # Filtrar por duração e criar lista final
@@ -911,10 +923,7 @@ class YouTubeService:
                     reason = f"Muito longo ({duration_minutes}min > {config.AUTOPLAY_MAX_DURATION}min)"
                     self.logger.debug(f"   ⏭️ Excluído - {reason}")
                     autoplay_logger.log_duration_filter(
-                        item['snippet']['title'],
-                        duration_minutes,
-                        reason,
-                        passed=False
+                        item["snippet"]["title"], duration_minutes, reason, passed=False
                     )
                     continue
 
@@ -923,20 +932,17 @@ class YouTubeService:
                     reason = f"Muito curto ({duration_minutes}min < {config.AUTOPLAY_MIN_DURATION}min)"
                     self.logger.debug(f"   ⏭️ Excluído - {reason}")
                     autoplay_logger.log_duration_filter(
-                        item['snippet']['title'],
-                        duration_minutes,
-                        reason,
-                        passed=False
+                        item["snippet"]["title"], duration_minutes, reason, passed=False
                     )
                     continue
 
                 # LOG: Vídeo aprovado!
                 self.logger.debug(f"   ✅ APROVADO após filtro de duração!")
                 autoplay_logger.log_duration_filter(
-                    item['snippet']['title'],
+                    item["snippet"]["title"],
                     duration_minutes,
                     f"Dentro dos limites ({config.AUTOPLAY_MIN_DURATION}-{config.AUTOPLAY_MAX_DURATION}min)",
-                    passed=True
+                    passed=True,
                 )
 
                 # Adicionar à lista final
@@ -958,19 +964,19 @@ class YouTubeService:
                 f"✅ Filtrados {len(videos)} vídeos de {len(video_candidates)} candidatos "
                 f"({len(video_candidates) - len(videos)} rejeitados por duração)"
             )
-            
+
             # 📊 LOG AUTOPLAY: Resumo dos filtros de duração
             autoplay_logger.log_filter_summary(
                 approved=len(videos),
                 rejected=len(video_candidates) - len(videos),
                 min_duration=config.AUTOPLAY_MIN_DURATION,
-                max_duration=config.AUTOPLAY_MAX_DURATION
+                max_duration=config.AUTOPLAY_MAX_DURATION,
             )
 
             # 🤖 VALIDAÇÃO FINAL COM IA
             if videos and len(videos) > 0:
                 self.logger.info(f"🤖 Validando {len(videos)} vídeos com IA...")
-                
+
                 # 📊 LOG AUTOPLAY: Início da validação IA
                 autoplay_logger.log_ai_validation_start(len(videos))
 
