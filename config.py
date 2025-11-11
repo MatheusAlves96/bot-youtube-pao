@@ -28,6 +28,7 @@ class Config:
 
         self._initialized = True
         self._load_config()
+        self._create_directories()  # Criar diretórios aqui (uma vez só)
 
     def _load_config(self):
         """Carrega as configurações de variáveis de ambiente ou valores padrão"""
@@ -101,9 +102,25 @@ class Config:
         self.ENABLE_FILTERS = os.getenv("ENABLE_FILTERS", "True").lower() == "true"
         self.ENABLE_LYRICS = os.getenv("ENABLE_LYRICS", "False").lower() == "true"
 
+    def _create_directories(self):
+        """Cria diretórios necessários (chamado apenas no __init__)"""
+        # Criar diretório de configurações
+        if not self.CREDENTIALS_PATH.parent.exists():
+            self.CREDENTIALS_PATH.parent.mkdir(parents=True, exist_ok=True)
+
+        # Criar diretório de cache
+        if not self.CACHE_DIR.exists() and self.CACHE_ENABLED:
+            self.CACHE_DIR.mkdir(parents=True, exist_ok=True)
+
+        # Criar diretório de logs
+        log_path = Path(self.LOG_FILE).parent
+        if not log_path.exists():
+            log_path.mkdir(parents=True, exist_ok=True)
+
     def validate(self) -> tuple[bool, list[str]]:
         """
         Valida se todas as configurações obrigatórias estão presentes
+        SEM I/O - diretórios já foram criados no __init__
 
         Returns:
             tuple: (is_valid, error_messages)
@@ -119,12 +136,6 @@ class Config:
             errors.append(
                 "Credenciais do YouTube não configuradas (API_KEY ou CLIENT_ID/SECRET)"
             )
-
-        if not self.CREDENTIALS_PATH.parent.exists():
-            self.CREDENTIALS_PATH.parent.mkdir(parents=True, exist_ok=True)
-
-        if not self.CACHE_DIR.exists() and self.CACHE_ENABLED:
-            self.CACHE_DIR.mkdir(parents=True, exist_ok=True)
 
         return len(errors) == 0, errors
 
