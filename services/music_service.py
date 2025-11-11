@@ -90,6 +90,7 @@ class MusicPlayer:
             None  # Último usuário que solicitou música
         )
         self.is_fetching_autoplay = False  # Previne múltiplas buscas simultâneas
+        self.autoplay_lock = asyncio.Lock()  # Lock assíncrono para prevenir race conditions
         self.stopped_manually = False  # Flag para indicar se usuário parou manualmente
 
         # Loop detection
@@ -1282,13 +1283,18 @@ class MusicService:
             reference_title: Título de referência (override last_video_title)
             reference_channel: Canal de referência (override last_video_channel)
         """
-        if player.is_fetching_autoplay:
+        # Verificar lock ANTES de tentar adquirir (não bloqueia)
+        if player.autoplay_lock.locked():
             self.logger.debug(
-                "🚫 Autoplay já está buscando músicas - ignorando chamada duplicada"
+                "� Autoplay lock ativo - ignorando chamada duplicada (race condition evitada)"
             )
             return
-
-        player.is_fetching_autoplay = True
+        
+        # Adquirir lock atomicamente
+        async with player.autoplay_lock:
+            if player.is_fetching_autoplay:  # Double-check após adquirir lock
+                return
+            player.is_fetching_autoplay = True
         self.logger.debug(
             f"🔍 Autoplay iniciado - Modo: {'proativo' if proactive else 'reativo'}, Fila atual: {len(player.queue)}"
         )
