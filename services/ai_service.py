@@ -31,7 +31,7 @@ class AIService:
         self.logger = LoggerFactory.create_logger(__name__)
         self.api_key = config.GROQ_API_KEY
         self.api_url = "https://api.groq.com/openai/v1/chat/completions"
-        self.model = "llama-3.1-8b-instant"  # Modelo rápido e gratuito
+        self.model = "llama-3.3-70b-versatile"  # Modelo mais inteligente (melhor para análise musical)
 
         # Cache de respostas (24h TTL)
         self._response_cache: Dict[str, tuple[Dict[str, Any], float]] = {}
@@ -115,6 +115,11 @@ class AIService:
                     "response_format": {"type": "json_object"},
                 }
 
+                # LOG: Mostrar prompt enviado para IA (debug)
+                self.logger.debug(
+                    f"📤 Prompt enviado para IA (estratégia {strategy}):\n{prompt[:500]}..."
+                )
+
                 timeout = aiohttp.ClientTimeout(total=10)
                 async with session.post(
                     self.api_url, headers=headers, json=payload, timeout=timeout
@@ -138,6 +143,11 @@ class AIService:
 
                     # Parse da resposta JSON
                     analysis = json.loads(content)
+
+                    # LOG: Mostrar resposta completa da IA (debug)
+                    self.logger.debug(
+                        f"🤖 Resposta completa da IA: {json.dumps(analysis, ensure_ascii=False)}"
+                    )
 
                     self.logger.info(
                         f"🤖 IA gerou query: '{analysis.get('query', 'N/A')}'"
@@ -186,70 +196,106 @@ class AIService:
             else "- (nenhuma música tocada ainda)"
         )
 
-        prompt = f"""Analise esta música e gere uma query de busca otimizada para YouTube:
+        prompt = f"""
+        Analise CUIDADOSAMENTE esta música e gere uma query PRECISA para YouTube:
 
-MÚSICA ATUAL:
-- Título: "{title}"
-- Canal/Artista: "{channel}"
+        🎵 MÚSICA ATUAL (FOCO DA ANÁLISE):
+        - Título: "{title}"
+        - Canal/Artista: "{channel}"
 
-HISTÓRICO RECENTE (últimas músicas tocadas - EVITE REPETIR):
-{history_str}
+        📜 HISTÓRICO RECENTE (EVITE REPETIR):
+        {history_str}
 
-ESTRATÉGIA DE BUSCA: {strategy_descriptions.get(strategy, "padrão")}
+        🎯 ESTRATÉGIA: {strategy_descriptions.get(strategy, "padrão")}
 
-INSTRUÇÕES:
-1. Detecte: artista principal, gênero musical, mood/energia, idioma (português/inglês/outro)
-2. Identifique se é: música brasileira, internacional, indie, mainstream
-3. Verifique se é: original, cover, remix, live, acústico
-4. EVITE sugerir artistas/músicas que estão no histórico
-5. Gere query que traga resultados DIVERSOS mas COERENTES musicalmente
+        ⚠️ ANÁLISE OBRIGATÓRIA PASSO A PASSO:
 
-REGRAS IMPORTANTES:
-- Se música BRASILEIRA: adicione "brasileiro", "nacional" ou "br" na query
-- Se música INTERNACIONAL: use termos em inglês como "official", "music", "similar to"
-- Se estratégia 0-1: mantenha o gênero mas varie artistas
-- Se estratégia 2-3: seja mais criativo e explore gêneros relacionados
-- NUNCA repita exatamente os mesmos artistas do histórico
-- Priorize termos que trazem músicas OFICIAIS (não covers/remixes)
+        1️⃣ IDENTIFICAR IDIOMA/PAÍS:
+           - Nome do artista em português/características brasileiras? → música brasileira
+           - Nome em inglês/outras línguas? → música internacional
+           - Considere: idioma das letras, sotaque, referências culturais
 
-Responda APENAS com JSON válido nesta estrutura EXATA:
-{{
-  "query": "query otimizada para busca no YouTube (string, 3-8 palavras)",
-  "tipo": "artista_similar|genero|mood|exploratorio (string)",
-  "genero": "gênero musical detectado (string)",
-  "internacional": true ou false (boolean),
-  "explicacao": "justificativa breve da query (string, max 60 chars)"
-}}
+        2️⃣ IDENTIFICAR GÊNERO E SUBGÊNERO PRECISO:
+           - Use seu conhecimento musical para identificar o gênero EXATO
+           - Trap ≠ Funk ≠ Rap Consciente ≠ Rock (são MUITO diferentes!)
+           - Subgêneros importantes: trap, drill, boom bap, emo rap, etc
+           - Pense: "Que outros artistas fazem música PARECIDA com essa?"
 
-EXEMPLO 1 - Música Brasileira (Estratégia 0):
-Música: "Ari Acústico - A Droga do Amor"
-{{
-  "query": "rap melodico acustico brasileiro",
-  "tipo": "genero",
-  "genero": "rap acústico",
-  "internacional": false,
-  "explicacao": "Rap melódico acústico nacional similar"
-}}
+        3️⃣ IDENTIFICAR ERA/ANO:
+           - Detecte a década/ano pela música (2000s, 2010s, 2020s, etc)
+           - Exemplos: "I'm So Paid" (2008) = 2000s, "Skyfall" (2012) = 2010s
+           - Use na query quando relevante: "2000s hip hop", "rock 90s", etc
 
-EXEMPLO 2 - Internacional (Estratégia 1):
-Música: "Adele - Skyfall"
-{{
-  "query": "Sam Smith Amy Winehouse powerful vocals",
-  "tipo": "artista_similar",
-  "genero": "pop soul",
-  "internacional": true,
-  "explicacao": "Vozes poderosas soul/pop internacional"
-}}
+        4️⃣ GERAR QUERY COERENTE:
+           - 🎯 SEMPRE inclua o ARTISTA PRINCIPAL da música atual na query
+           - Adicione 1-2 artistas similares para expandir resultados
+           - Para internacional: "artista_atual artista_similar gênero era"
+           - Para brasileiro: "artista_atual artista_similar gênero brasileiro"
+           - Estratégia 0-1: mantenha gênero E origem (BR com BR, internacional com internacional)
+           - Estratégia 2-3: varie gênero MAS mantenha a origem/idioma
+           - Inclua contexto temporal quando relevante (anos 2000s, 2010s, etc)
 
-EXEMPLO 3 - Brasileira (Estratégia 2):
-Música: "Djonga - Olho de Tigre"
-{{
-  "query": "rap consciente poesia brasileira",
-  "tipo": "mood",
-  "genero": "rap consciente",
-  "internacional": false,
-  "explicacao": "Expandindo para rap poético nacional"
-}}"""
+           Exemplo: Música "Matuê - Anos Luz" → Query: "Matuê WIU Teto trap brasileiro"
+
+        🚫 PRINCÍPIOS DE COERÊNCIA MUSICAL:
+        - Trap brasileiro (Matuê, WIU) ≠ Funk/Pop (Anitta) ≠ Rock (Pitty)
+        - Hip-hop internacional (Drake) ≠ Rap consciente BR (Djonga)
+        - Mantenha coerência de: PAÍS + GÊNERO + ERA + ENERGIA
+        - Artistas similares devem soar PARECIDOS, não apenas ser do mesmo país
+        - Na dúvida, seja ESPECÍFICO com subgênero (trap BR, não apenas "rap")
+
+        Responda APENAS com JSON válido nesta estrutura EXATA:
+        {{
+        "query": "query otimizada para busca no YouTube (string, 3-8 palavras)",
+        "tipo": "artista_similar|genero|mood|exploratorio (string)",
+        "genero": "gênero musical detectado (string)",
+        "internacional": true ou false (boolean),
+        "explicacao": "justificativa breve da query (string, max 60 chars)"
+        }}
+
+        ✅ EXEMPLO 1 - Hip-Hop INTERNACIONAL (Estratégia 0):
+        Entrada: "Akon - I'm So Paid ft. Lil Wayne, Young Jeezy" | Canal: "Akon"
+        Análise: Akon (inglês) → internacional | hip-hop/R&B | Era: 2008 (2000s)
+        {{
+        "query": "Akon T-Pain Flo Rida 2000s hip hop",
+        "tipo": "artista_similar",
+        "genero": "hip-hop R&B",
+        "internacional": true,
+        "explicacao": "Hip-hop 2000s - Akon + artistas similares"
+        }}
+
+        ✅ EXEMPLO 2 - Trap BRASILEIRO (Estratégia 0):
+        Entrada: "Matuê - Anos Luz" | Canal: "30PRAUM"
+        Análise: Matuê (português) → brasileiro | trap moderno | Era: 2020s
+        {{
+        "query": "Matuê WIU Teto trap brasileiro",
+        "tipo": "artista_similar",
+        "genero": "trap brasileiro",
+        "internacional": false,
+        "explicacao": "Trap BR 2020s - Matuê + artistas similares"
+        }}
+
+        ✅ EXEMPLO 3 - Rap BRASILEIRO (Estratégia 0):
+        Entrada: "Djonga - Olho de Tigre" | Canal: "Djonga"
+        Análise: Djonga (português) → brasileiro | rap consciente | Era: 2010s
+        {{
+        "query": "Djonga BK Racionais rap consciente brasileiro",
+        "tipo": "artista_similar",
+        "genero": "rap consciente",
+        "internacional": false,
+        "explicacao": "Rap consciente BR - Djonga + artistas similares"
+        }}
+
+        ✅ EXEMPLO 4 - Pop INTERNACIONAL (Estratégia 1):
+        Entrada: "Adele - Skyfall" | Canal: "Adele"
+        Análise: Adele = nome inglês → internacional | Gênero: pop soul
+        {{
+        "query": "Sam Smith Amy Winehouse powerful vocals",
+        "tipo": "artista_similar",
+        "genero": "pop soul",
+        "internacional": true,
+        "explicacao": "Vozes poderosas soul/pop internacional"
+        }}"""
 
         return prompt
 
@@ -455,14 +501,21 @@ CONSIDERE CONTEÚDO INDESEJADO:
 - Vídeos motivacionais, meditação
 - Qualquer conteúdo que NÃO seja música para ouvir
 
-CONSIDERE MÚSICA ADEQUADA (SEJA FLEXÍVEL):
+CONSIDERE MÚSICA ADEQUADA (SEJA MUITO FLEXÍVEL):
 ✅ Músicas oficiais (official audio/video)
-✅ Participações/featurings (MC A, MC B, MC C)
-✅ Covers, remixes, versões acústicas
-✅ Clipes musicais, lyric videos
-✅ Músicas ao vivo, apresentações
+✅ Músicas clássicas/conhecidas do artista (mesmo que o canal não seja oficial)
+✅ Participações/featurings (MC A feat. MC B, artista ft. outro)
+✅ Covers, remixes, versões acústicas, mashups
+✅ Clipes musicais, lyric videos, visualizers
+✅ Músicas ao vivo, apresentações, shows
 ✅ Músicas do mesmo gênero ou artistas similares
-✅ Qualquer música que é BOA para ouvir, mesmo que não seja do canal oficial
+✅ Compilações de MÚSICAS (não de podcasts)
+✅ Qualquer CONTEÚDO MUSICAL para ouvir
+
+⚠️ IMPORTANTE: NÃO rejeite por "não ser do canal oficial"!
+   - Músicas podem estar em canais de terceiros (compilações, lyric videos, etc)
+   - O importante é ser MÚSICA para ouvir, não quem fez o upload
+   - Juvenile "Back That Thang Up" = MÚSICA CLÁSSICA = ✅ APROVAR (mesmo que não seja canal oficial)
 
 Responda APENAS com JSON válido:
 {{
@@ -479,7 +532,15 @@ Responda APENAS com JSON válido:
 IMPORTANTE:
 - Seja FLEXÍVEL com músicas (covers, participações, remixes são BEM-VINDOS)
 - Seja RIGOROSO com conteúdo não-musical (podcasts, reações, análises)
-- Na dúvida entre música e não-música: APROVE a música"""
+- Na dúvida entre música e não-música: APROVE a música
+- NÃO rejeite por "canal não oficial" - foque apenas se é MÚSICA ou não
+
+EXEMPLOS DE APROVAÇÃO:
+✅ "Juvenile - Back That Thang Up" → APROVAR (música clássica, mesmo que não seja canal oficial)
+✅ "50 Cent - In Da Club" → APROVAR (música conhecida)
+✅ "Artista X - Música (Cover)" → APROVAR (cover é música)
+❌ "A história do Juvenile e seu maior hit" → REJEITAR (documentário, não é música)
+❌ "Reagindo a Back That Thang Up" → REJEITAR (reação, não é música)"""
 
             async with aiohttp.ClientSession() as session:
                 headers = {

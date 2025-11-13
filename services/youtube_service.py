@@ -3,6 +3,7 @@ YouTube Service - Strategy Pattern
 Gerencia autenticação e busca de vídeos do YouTube
 """
 
+import asyncio
 import os
 import re
 from pathlib import Path
@@ -904,6 +905,7 @@ class YouTubeService:
 
             # Buscar durações em batch (UMA chamada para todos!)
             import time
+
             batch_start = time.time()
             durations = await self.get_videos_duration_batch(candidate_ids)
             batch_elapsed = time.time() - batch_start
@@ -920,7 +922,9 @@ class YouTubeService:
             # Calcular métricas do batch
             speed = len(durations) / batch_elapsed if batch_elapsed > 0 else 0
             quota_saved = len(candidate_ids) - 1  # Batch usa 1 chamada vs N individuais
-            autoplay_logger.log_batch_duration_api(len(durations), batch_elapsed, speed, quota_saved)
+            autoplay_logger.log_batch_duration_api(
+                len(durations), batch_elapsed, speed, quota_saved
+            )
 
             # Filtrar por duração e criar lista final
             videos = []
@@ -935,6 +939,16 @@ class YouTubeService:
                 self.logger.debug(
                     f"🔍 {item['snippet']['title'][:50]} - ⏱️ {duration_minutes} min (batch)"
                 )
+
+                # ⚠️ IMPORTANTE: Se duration=0 e vídeo NÃO está no dict, significa que a API
+                # não retornou esse vídeo (deletado, privado, bloqueado por região, etc.)
+                if vid_id not in durations:
+                    reason = "Vídeo indisponível (não retornado pela API)"
+                    self.logger.debug(f"   ⏭️ Excluído - {reason}")
+                    autoplay_logger.log_duration_filter(
+                        item["snippet"]["title"], 0, reason, passed=False
+                    )
+                    continue
 
                 # Filtrar vídeos muito longos (configurável via AUTOPLAY_MAX_DURATION)
                 if duration_minutes > config.AUTOPLAY_MAX_DURATION:

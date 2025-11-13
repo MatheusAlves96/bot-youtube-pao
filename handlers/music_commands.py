@@ -1183,10 +1183,52 @@ class MusicCommands(commands.Cog):
                 "⏯️ Play/Pause | ⏭️ Skip | ⏹️ Stop",
                 "🔊 Vol+ | 🔉 Vol- | 🔁 Loop | 🎲 Autoplay",
             ],
+            "🔌 Plugins (Admin)": [
+                f"`{config.COMMAND_PREFIX}plugins` - Lista plugins carregados",
+                f"`{config.COMMAND_PREFIX}plugin_load <nome>` - Carrega um plugin",
+                f"`{config.COMMAND_PREFIX}plugin_unload <nome>` - Descarrega um plugin",
+                f"`{config.COMMAND_PREFIX}plugin_reload <nome>` - Recarrega um plugin",
+            ],
         }
 
         for category, cmds in commands_list.items():
             embed.add_field(name=category, value="\n".join(cmds), inline=False)
+
+        # Adicionar comandos dos plugins carregados
+        plugin_manager = getattr(self.bot, "plugin_manager", None)
+        if plugin_manager and plugin_manager.plugins:
+            enabled_plugins = [p for p in plugin_manager.plugins.values() if p.enabled]
+            if enabled_plugins:
+                for plugin in enabled_plugins:
+                    plugin_commands = plugin.get_commands()
+                    if plugin_commands:
+                        commands_text = []
+                        for cmd in plugin_commands:
+                            # Verificar se é comando de prefixo ou slash
+                            if hasattr(cmd, "name"):
+                                cmd_name = cmd.name
+                                # Pegar descrição do comando
+                                cmd_desc = getattr(cmd, "description", None) or getattr(
+                                    cmd, "help", "Sem descrição"
+                                )
+                                if hasattr(cmd, "callback"):
+                                    # É um comando de prefixo
+                                    commands_text.append(
+                                        f"`{config.COMMAND_PREFIX}{cmd_name}` - {cmd_desc}"
+                                    )
+                                else:
+                                    # É um comando slash
+                                    commands_text.append(f"`/{cmd_name}` - {cmd_desc}")
+
+                        if commands_text:
+                            plugin_title = f"🔌 {plugin.name} v{plugin.version}"
+                            if plugin.description:
+                                plugin_title += f" - {plugin.description}"
+                            embed.add_field(
+                                name=plugin_title,
+                                value="\n".join(commands_text),
+                                inline=False,
+                            )
 
         embed.set_footer(text="🎵 YouTube Music Bot | Desenvolvido com ❤️")
 

@@ -42,6 +42,9 @@ class MusicBot:
             command_prefix=config.COMMAND_PREFIX, intents=intents, help_command=None
         )
 
+        # Inicializar plugin_manager como None (será criado em load_cogs)
+        self.plugin_manager = None
+
         self._setup_events()
 
     def _setup_events(self):
@@ -52,6 +55,14 @@ class MusicBot:
             self.logger.info(f"{self.bot.user} está online!")
             self.logger.info(f"ID: {self.bot.user.id}")
             self.logger.info(f"Servidores: {len(self.bot.guilds)}")
+
+            # Sincronizar comandos slash (agora que application_id está disponível)
+            if self.plugin_manager:
+                try:
+                    await self.bot.tree.sync()
+                    self.logger.info("✅ Comandos slash sincronizados")
+                except Exception as e:
+                    self.logger.error(f"❌ Erro ao sincronizar comandos slash: {e}")
 
             # Configurar status
             await self.bot.change_presence(
@@ -81,6 +92,8 @@ class MusicBot:
     async def load_cogs(self):
         """Carrega todos os cogs (comandos) do bot"""
         from handlers.music_commands import MusicCommands
+        from plugins.plugin_manager import PluginManager
+        from handlers.plugin_commands import setup as setup_plugin_commands
 
         try:
             # Listar cogs atuais
@@ -99,6 +112,26 @@ class MusicBot:
             # Verificar quantos comandos foram registrados
             command_count = len(self.bot.commands)
             self.logger.info(f"📝 Total de comandos registrados: {command_count}")
+
+            # Inicializar sistema de plugins
+            self.logger.info("🔌 Inicializando sistema de plugins...")
+            self.plugin_manager = PluginManager(self.bot)
+            # Armazenar também no bot para acesso direto
+            self.bot.plugin_manager = self.plugin_manager
+
+            # Carregar PluginCommands Cog
+            if "PluginCommands" in list(self.bot.cogs.keys()):
+                self.logger.warning("⚠️ PluginCommands já está carregado! Removendo...")
+                await self.bot.remove_cog("PluginCommands")
+
+            await setup_plugin_commands(self.bot, self.plugin_manager)
+            self.logger.info("✅ PluginCommands carregado")
+
+            # Carregar todos os plugins disponíveis
+            loaded_count = await self.plugin_manager.load_all()
+            self.logger.info(f"✅ {loaded_count} plugin(s) carregado(s)")
+
+            # Nota: tree.sync() será chamado em on_ready quando application_id estiver disponível
 
         except Exception as e:
             self.logger.error(f"❌ Erro ao carregar cogs: {e}", exc_info=True)
