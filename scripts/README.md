@@ -8,9 +8,10 @@ Scripts auxiliares para depuração, manutenção e gerenciamento do bot.
 
 ```
 scripts/
-├── README.md                       # Este arquivo
-├── debug_batch_processing.py       # Debug de processamento em batch
-└── stop_bot.py                     # Encerramento gracioso do bot
+├── README.md                         # Este arquivo
+├── debug_batch_processing.py         # Debug de processamento em batch
+├── stop_bot.py                       # Encerramento gracioso do bot
+└── copy_token_to_server.py           # Copia token para servidor remoto
 ```
 
 ---
@@ -45,7 +46,371 @@ python3 scripts/stop_bot.py
 4. Libera recursos do FFmpeg
 5. Encerra o processo
 
-**Veja também:** [Guia de Encerramento](../docs/guides/guia-encerramento.md)
+**Veja também:** [Guia de Encerramento](../docs/guides/encerramento.md)
+
+---
+
+### `copy_token_to_server.py` - Copiar Token para Servidor
+
+Copia o `token.json` de forma segura para um servidor remoto via SCP.
+
+**Quando usar:**
+- Deployando bot em VPS/servidor sem interface gráfica
+- Servidor não tem navegador (ambiente headless)
+- Quer evitar autenticação manual no servidor
+
+**Pré-requisitos:**
+- SSH configurado para o servidor
+- Bot autenticado localmente (token.json existe)
+- OpenSSH/SCP instalado
+
+**Como usar:**
+
+```bash
+# Sintaxe geral
+python scripts/copy_token_to_server.py usuario@servidor:/caminho/bot
+
+# Exemplos
+python scripts/copy_token_to_server.py root@192.168.1.100:/root/bot-youtube-pao
+python scripts/copy_token_to_server.py ubuntu@vps.exemplo.com:/home/ubuntu/bot
+python scripts/copy_token_to_server.py user@servidor.com.br:/opt/discord-bot
+```
+
+**O que faz:**
+1. Verifica se `config/token.json` existe localmente
+2. Confirma a operação com o usuário
+3. Copia o token via SCP para o servidor
+4. Exibe próximos passos (chmod, executar bot)
+
+**Exemplo de execução:**
+
+```
+$ python scripts/copy_token_to_server.py root@192.168.1.100:/root/bot
+
+✅ Token encontrado!
+📁 Origem: /home/user/bot-youtube-pao/config/token.json
+🎯 Destino: root@192.168.1.100:/root/bot
+
+⚠️  Continuar? (s/N): s
+
+📤 Copiando token...
+✅ Token copiado com sucesso!
+
+📝 Próximos passos:
+1. Conecte ao servidor via SSH
+2. Verifique permissões: chmod 600 config/token.json
+3. Rode o bot: python3 main.py
+```
+
+**Troubleshooting:**
+
+- **"Token não encontrado"**: Execute `python main.py` localmente primeiro
+- **"scp não encontrado"**: Instale OpenSSH Client
+- **"Permission denied"**: Verifique acesso SSH ao servidor
+- **"No such file or directory"**: Crie o diretório config/ no servidor
+
+**Veja também:** [Guia de Servidor](../docs/guides/servidor.md)
+
+---
+
+## 🍪 Cookies & Autenticação
+
+### `extract_cookies.ps1` - Extrair Cookies Automaticamente (Windows)
+
+Extrai cookies do navegador Chrome/Edge automaticamente usando yt-dlp.
+
+**Requisitos:**
+- Windows 10/11
+- Python + yt-dlp instalados
+- Chrome/Edge com login no YouTube
+
+**Uso:**
+
+```powershell
+# Chrome (padrão)
+.\scripts\extract_cookies.ps1
+
+# Edge
+.\scripts\extract_cookies.ps1 -Browser edge
+
+# Firefox
+.\scripts\extract_cookies.ps1 -Browser firefox
+
+# Brave
+.\scripts\extract_cookies.ps1 -Browser brave
+
+# Arquivo de saída customizado
+.\scripts\extract_cookies.ps1 -OutputFile "meus_cookies.txt"
+```
+
+**O que faz:**
+1. ✅ Verifica se Python e yt-dlp estão instalados
+2. ✅ Detecta navegador instalado
+3. ✅ Solicita confirmação (login no YouTube)
+4. ✅ Extrai cookies usando yt-dlp
+5. ✅ Salva em `cookies.txt`
+6. ✅ Ajusta permissões (somente leitura)
+7. ✅ Mostra estatísticas (tamanho, quantidade de cookies)
+
+**Saída esperada:**
+```
+============================================
+🍪 Extrator Automático de Cookies
+============================================
+
+✅ Python encontrado: Python 3.11.5
+✅ yt-dlp encontrado: v2024.11.04
+✅ Google Chrome encontrado
+
+🔄 Extraindo cookies...
+✅ Cookies extraídos com sucesso!
+
+📊 Informações do arquivo:
+   📁 Arquivo: cookies.txt
+   📦 Tamanho: 5.24 KB
+   📅 Data: 2025-11-14 10:30:00
+   🍪 Cookies: 42 entradas
+```
+
+**Erros comuns:**
+- "Navegador não encontrado" → Instale Chrome/Edge
+- "Erro ao extrair" → Feche o navegador completamente
+- "Arquivo vazio" → Verifique se está logado no YouTube
+
+---
+
+### `upload_cookies.ps1` - Enviar Cookies para Servidor
+
+Envia `cookies.txt` para servidor Linux via SCP.
+
+**Requisitos:**
+- Windows com OpenSSH Client
+- Acesso SSH ao servidor
+- `cookies.txt` já extraído
+
+**Uso:**
+
+```powershell
+# Básico
+.\scripts\upload_cookies.ps1 -Server usuario@servidor -Path /caminho/bot
+
+# Com reinício automático do bot
+.\scripts\upload_cookies.ps1 -Server ubuntu@192.168.1.100 -Path /home/ubuntu/bot -RestartBot
+
+# Arquivo customizado
+.\scripts\upload_cookies.ps1 -Server user@host -Path /opt/bot -CookiesFile meus_cookies.txt
+```
+
+**Parâmetros:**
+- `-Server`: Usuário e host SSH (formato: `usuario@servidor`)
+- `-Path`: Caminho do bot no servidor
+- `-CookiesFile`: Arquivo de cookies (padrão: `cookies.txt`)
+- `-RestartBot`: Reinicia bot automaticamente após upload
+
+**O que faz:**
+1. ✅ Verifica se `cookies.txt` existe
+2. ✅ Alerta se cookies estão antigos (>90 dias)
+3. ✅ Envia arquivo via SCP
+4. ✅ Ajusta permissões no servidor (chmod 600)
+5. ✅ (Opcional) Reinicia bot via systemd
+
+**Saída esperada:**
+```
+============================================
+📤 Upload de Cookies para Servidor
+============================================
+
+📊 Informações do arquivo:
+   📁 Arquivo: cookies.txt
+   📦 Tamanho: 5.24 KB
+   📅 Modificado: 2025-11-14 10:30:00
+
+🌐 Servidor de destino:
+   👤 Usuário: ubuntu
+   🖥️  Host: 192.168.1.100
+   📂 Caminho: /home/ubuntu/bot/cookies.txt
+
+🔄 Enviando arquivo...
+✅ Arquivo enviado com sucesso!
+
+🔒 Ajustando permissões no servidor...
+-rw------- 1 ubuntu ubuntu 5365 Nov 14 10:30 /home/ubuntu/bot/cookies.txt
+✅ Permissões ajustadas (600 - somente proprietário)
+```
+
+**Solução de problemas:**
+- "SCP não encontrado" → Instale OpenSSH Client
+- "Permission denied" → Verifique acesso SSH
+- "No such file or directory" → Verifique caminho no servidor
+
+**Veja também:**
+- [Guia de Cookies](../docs/guides/cookies-youtube.md)
+- [Deploy em Servidor](../docs/guides/servidor.md)
+
+---
+
+## 🚀 Inicialização
+
+### `start_bot.ps1` - Iniciar Bot (Windows)
+
+Script completo de inicialização com verificações automáticas de ambiente.
+
+**Uso:**
+
+```powershell
+# Modo normal
+.\scripts\start_bot.ps1
+
+# Modo desenvolvedor (DEBUG)
+.\scripts\start_bot.ps1 -Dev
+
+# Modo verbose
+.\scripts\start_bot.ps1 -Verbose
+
+# Apenas verificar (sem iniciar)
+.\scripts\start_bot.ps1 -CheckOnly
+
+# Combinado
+.\scripts\start_bot.ps1 -Dev -Verbose
+```
+
+**O que faz:**
+1. ✅ Verifica Python 3.10+
+2. ✅ Cria ambiente virtual se não existir
+3. ✅ Ativa ambiente virtual
+4. ✅ Instala dependências faltantes
+5. ✅ Verifica configuração (.env, token, cookies)
+6. ✅ Inicia bot com logging apropriado
+
+**Verificações:**
+- Python versão >= 3.10
+- Ambiente virtual (cria se não existir)
+- Dependências do `requirements.txt`
+- Arquivo `.env` (cria do .env.example)
+- Token OAuth2 (avisa se não existir)
+- Cookies (avisa idade se >90 dias)
+
+**Parâmetros:**
+- `-Dev`: Ativa modo desenvolvedor (LOG_LEVEL=DEBUG)
+- `-Verbose`: Ativa logs verbose
+- `-CheckOnly`: Apenas verifica, não inicia
+
+---
+
+### `start_bot.sh` - Iniciar Bot (Linux)
+
+Script completo de inicialização para Linux com verificações automáticas.
+
+**Uso:**
+
+```bash
+# Dar permissão de execução (primeira vez)
+chmod +x scripts/start_bot.sh
+
+# Modo normal
+./scripts/start_bot.sh
+
+# Modo desenvolvedor (DEBUG)
+./scripts/start_bot.sh --dev
+
+# Modo verbose
+./scripts/start_bot.sh --verbose
+
+# Apenas verificar (sem iniciar)
+./scripts/start_bot.sh --check-only
+
+# Combinado
+./scripts/start_bot.sh --dev --verbose
+```
+
+**O que faz:**
+1. ✅ Verifica Python 3.10+
+2. ✅ Cria ambiente virtual se não existir
+3. ✅ Ativa ambiente virtual
+4. ✅ Instala dependências faltantes
+5. ✅ Verifica/instala FFmpeg
+6. ✅ Verifica configuração (.env, token, cookies)
+7. ✅ Inicia bot com logging apropriado
+
+**Verificações adicionais (Linux):**
+- FFmpeg instalado (instala automaticamente)
+- Permissões de arquivo corretas
+- Diretórios necessários existem
+
+**Parâmetros:**
+- `--dev`: Ativa modo desenvolvedor (LOG_LEVEL=DEBUG)
+- `--verbose`: Ativa logs verbose
+- `--check-only`: Apenas verifica, não inicia
+
+**Integração com systemd:**
+
+O script pode ser usado diretamente no serviço systemd:
+
+```ini
+[Service]
+ExecStart=/caminho/bot/scripts/start_bot.sh
+```
+
+**Veja também:** [Deploy em Servidor](../docs/guides/servidor.md)
+
+---
+
+## 🔄 Fluxo de Trabalho Completo
+
+### Windows → Servidor Linux
+
+**1. Extrair cookies no Windows:**
+```powershell
+.\scripts\extract_cookies.ps1
+```
+
+**2. Enviar cookies para servidor:**
+```powershell
+.\scripts\upload_cookies.ps1 -Server ubuntu@servidor -Path /home/ubuntu/bot -RestartBot
+```
+
+**3. (Opcional) Testar localmente antes:**
+```powershell
+.\scripts\start_bot.ps1 -CheckOnly
+.\scripts\start_bot.ps1
+```
+
+### Apenas Linux (com cookies já copiados)
+
+**1. Verificar ambiente:**
+```bash
+./scripts/start_bot.sh --check-only
+```
+
+**2. Iniciar bot:**
+```bash
+./scripts/start_bot.sh
+```
+
+**3. Manutenção (a cada 60-90 dias):**
+```bash
+# No Windows, re-extrair cookies
+.\scripts\extract_cookies.ps1
+
+# Enviar para servidor
+.\scripts\upload_cookies.ps1 -Server user@servidor -Path /path/bot -RestartBot
+```
+
+---
+
+## 📅 Cronograma de Manutenção
+
+| Frequência | Tarefa | Script |
+|------------|--------|--------|
+| **1x (setup)** | Extrair cookies inicial | `extract_cookies.ps1` |
+| **1x (setup)** | Enviar para servidor | `upload_cookies.ps1` |
+| **A cada 60-90 dias** | Re-extrair cookies | `extract_cookies.ps1` |
+| **A cada 60-90 dias** | Re-enviar para servidor | `upload_cookies.ps1` |
+| **Diariamente** | Bot roda automaticamente | `start_bot.sh` (systemd) |
+
+---
+
+**Veja também:** [Guia de Servidor](../docs/guides/servidor.md)
 
 ---
 

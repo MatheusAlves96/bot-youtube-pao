@@ -319,6 +319,6 @@ utils/         # Quota tracker
 
 ---
 
-**Última Atualização:** 13 de novembro de 2025  
-**Versão Atual:** 1.0.0  
+**Última Atualização:** 13 de novembro de 2025
+**Versão Atual:** 1.0.0
 **Status:** � Ativo e estável

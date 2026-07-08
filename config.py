@@ -107,6 +107,9 @@ class Config:
         self.CACHE_MAX_SIZE_MB = int(os.getenv("CACHE_MAX_SIZE_MB", "500"))
         self.VIDEO_CACHE_SIZE = int(os.getenv("VIDEO_CACHE_SIZE", "100"))
 
+        # 🍪 Cookies do YouTube (evita bloqueio de bot)
+        self.YTDL_COOKIES_PATH = os.getenv("YTDL_COOKIES_PATH", "cookies.txt")
+
         # Feature Flags
         self.ENABLE_PLAYLISTS = os.getenv("ENABLE_PLAYLISTS", "True").lower() == "true"
         self.ENABLE_FILTERS = os.getenv("ENABLE_FILTERS", "True").lower() == "true"
@@ -169,9 +172,14 @@ class Config:
             "socket_timeout": 30,
         }
 
-        # 🍪 Opcional: Usar cookies do navegador para vídeos com restrição de idade
-        # Descomente a linha abaixo e escolha o navegador (chrome, firefox, edge, etc.)
-        # options["cookiesfrombrowser"] = ("chrome",)  # ou "firefox", "edge", etc.
+        # 🍪 Usar cookies do YouTube se arquivo existir (evita bloqueio de bot)
+        if Path(self.YTDL_COOKIES_PATH).exists():
+            options["cookiefile"] = self.YTDL_COOKIES_PATH
+        else:
+            # Fallback: Tentar extrair cookies do navegador Chrome
+            # Descomente a linha abaixo se preferir extrair automaticamente do navegador
+            # options["cookiesfrombrowser"] = ("chrome",)  # ou "firefox", "edge", etc.
+            pass
 
         return options
 

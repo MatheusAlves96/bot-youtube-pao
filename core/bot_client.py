@@ -92,6 +92,7 @@ class MusicBot:
     async def load_cogs(self):
         """Carrega todos os cogs (comandos) do bot"""
         from handlers.music_commands import MusicCommands
+        from handlers.admin_commands import AdminCommands
         from plugins.plugin_manager import PluginManager
         from handlers.plugin_commands import setup as setup_plugin_commands
 
@@ -105,9 +106,17 @@ class MusicBot:
                 self.logger.warning("⚠️ MusicCommands já está carregado! Removendo...")
                 await self.bot.remove_cog("MusicCommands")
 
-            # Adicionar novo cog
+            # Adicionar MusicCommands
             await self.bot.add_cog(MusicCommands(self.bot))
-            self.logger.info("✅ Cogs carregados com sucesso")
+            self.logger.info("✅ MusicCommands carregado")
+
+            # Adicionar AdminCommands
+            if "AdminCommands" in list(self.bot.cogs.keys()):
+                self.logger.warning("⚠️ AdminCommands já está carregado! Removendo...")
+                await self.bot.remove_cog("AdminCommands")
+
+            await self.bot.add_cog(AdminCommands(self.bot))
+            self.logger.info("✅ AdminCommands carregado")
 
             # Verificar quantos comandos foram registrados
             command_count = len(self.bot.commands)

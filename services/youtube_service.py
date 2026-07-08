@@ -137,13 +137,13 @@ class YouTubeOAuth2Strategy(YouTubeAuthStrategy):
                             self.logger.info(f"   {redirect_uri}")
                             self.logger.info("=" * 60)
 
-                            # Executar servidor local
+                            # Executar servidor local (sem abrir navegador automaticamente)
                             creds = flow.run_local_server(
                                 port=port,
                                 host="localhost",
                                 authorization_prompt_message="",
                                 success_message="✅ Autenticação concluída! Você pode fechar esta aba.",
-                                open_browser=True,
+                                open_browser=False,  # Não abre navegador automaticamente
                             )
 
                             self.logger.info(

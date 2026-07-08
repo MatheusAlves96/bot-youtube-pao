@@ -64,6 +64,10 @@ Bot de música profissional para Discord com **Autoplay Inteligente por IA**, au
 - **🔑 [Guia de Credenciais](docs/guides/credenciais.md)** - Bot Token vs Client ID/Secret explicado
 - **📸 [Onde Encontrar](docs/guides/onde-encontrar.md)** - Guia visual com screenshots explicativos
 - **👤 [Owner ID](docs/guides/owner-id.md)** - Como obter seu ID de usuário do Discord
+- **🖥️ [Deploy em Servidor](docs/guides/servidor.md)** - Rodar bot em VPS/servidor headless
+- **🍪 [Cookies do YouTube](docs/guides/cookies-youtube.md)** - Evitar bloqueio "Sign in to confirm you're not a bot"
+- **🤖 [Scripts Automáticos](scripts/README.md)** - Extração de cookies e deploy automatizado
+- **🔧 [Comandos Admin](COMANDOS_ADMIN.md)** - Gerenciar bot sem reiniciar (config dinâmica)
 - **❓ [FAQ - Perguntas Frequentes](docs/faq.md)** - Soluções para problemas comuns
 
 ### Para Desenvolvedores
